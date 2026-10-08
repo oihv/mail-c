@@ -1,5 +1,6 @@
 #define STB_SPRINTF_IMPLEMENTATION
 #include "third_party/stb_sprintf.h"
+
 fn Arena *arena_alloc(u64 reserve_size, u64 commit_size) {
   u32 pagesize = plat_get_pagesize();
 
@@ -178,8 +179,8 @@ fn String8 str8_range(u8 *first, u8 *one_past_last) {
   return result;
 }
 
-fn String8 str8_substr(String8 *str, u64 start, u64 end) {
-  String8 result = str8_range(str->str + start, str->str + end);
+fn String8 str8_substr(String8 str, u64 start, u64 end) {
+  String8 result = str8_range(str.str + start, str.str + end);
   return result;
 }
 
@@ -193,20 +194,20 @@ fn String8 str8_concat(Arena *arena, String8 a, String8 b) {
   return result;
 }
 
-fn String8 str8_trim_whitespace(String8 *a) {
+fn String8 str8_trim_whitespace(String8 a) {
   u8 *start = 0;
   u8 *end = 0;
   for
-    EachIndex(i, a->size) {
-      if (a->str[i] != ' ') {
-        start = a->str + i;
+    EachIndex(i, a.size) {
+      if (a.str[i] != ' ') {
+        start = a.str + i;
         break;
       }
     }
   for
-    EachIndexRev(i, a->size) {
-      if (a->str[i - 1] != ' ') {
-        end = a->str + i; // one pass last
+    EachIndexRev(i, a.size) {
+      if (a.str[i - 1] != ' ') {
+        end = a.str + i; // one pass last
         break;
       }
     }
@@ -214,20 +215,33 @@ fn String8 str8_trim_whitespace(String8 *a) {
   return result;
 }
 
-fn b32 str8_compare(String8 *a, String8 *b) {
-  if (a->size != b->size)
+fn b32 str8_compare(String8 a, String8 b) {
+  if (a.size != b.size)
     return false;
   for
-    EachIndex(i, a->size) {
-      if (a->str[i] != b->str[i])
+    EachIndex(i, a.size) {
+      if (a.str[i] != b.str[i])
         return false;
     }
   return true;
 }
 
-fn b32 str8_compare_cstring(String8 *a, char *b) {
+fn b32 str8_compare_cstring(String8 a, char *b) {
   String8 b_str = str8_cstring(b);
-  return str8_compare(a, &b_str);
+  return str8_compare(a, b_str);
+}
+
+fn u64 str8_find(String8 haystack, String8 needle) {
+  u64 pos = haystack.size;
+  for (u8* p = haystack.str; p + needle.size <= haystack.str + haystack.size; p++) {
+    String8 sub = str8_range(p, p + needle.size);
+    if (str8_compare(sub, needle)) {
+      pos = p - haystack.str;
+      break;
+    }
+  }
+
+  return pos;
 }
 
 // string copy/formatting
@@ -261,12 +275,12 @@ fn String8 str8f(Arena *arena, char *fmt, ...) {
 }
 
 // string conversion
-fn i32 str8_to_i32(String8 *str) {
+fn i32 str8_to_i32(String8 str) {
   i32 acc = 0;
   i32 mul = 1;
   for
-    EachIndexRev(i, str->size) {
-      acc += (str->str[i - 1] - '0') * mul;
+    EachIndexRev(i, str.size) {
+      acc += (str.str[i - 1] - '0') * mul;
       mul *= 10;
     }
   return acc;
@@ -279,25 +293,25 @@ fn String8Node *str8_list_push_node(String8List *list, String8Node *node) {
   return node;
 }
 
-fn String8List str8_split(Arena *arena, String8 *target, String8 *delim) {
+fn String8List str8_split(Arena *arena, String8 target, String8 delim) {
   u64 prev = 0;
   String8List result = {0};
-  for (int i = 0; i + delim->size <= target->size; i++) {
-    String8 substr = str8_range(target->str + i, target->str + i + delim->size);
-    if (str8_compare(&substr, delim)) {
+  for (int i = 0; i + delim.size <= target.size; i++) {
+    String8 substr = str8_range(target.str + i, target.str + i + delim.size);
+    if (str8_compare(substr, delim)) {
       String8Node *node = arena_push(arena, sizeof(String8Node), 1);
-      node->str.str = target->str + prev;
+      node->str.str = target.str + prev;
       node->str.size = i - prev;
       str8_list_push_node(&result, node);
-      i += delim->size;
+      i += delim.size;
       prev = i;
     }
   }
   // add last split
-  if (prev < target->size) {
+  if (prev < target.size) {
     String8Node *node = arena_push(arena, sizeof(String8Node), 1);
-    node->str.str = target->str + prev;
-    node->str.size = target->size - prev;
+    node->str.str = target.str + prev;
+    node->str.size = target.size - prev;
     str8_list_push_node(&result, node);
   }
   return result;

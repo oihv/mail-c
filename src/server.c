@@ -11,20 +11,18 @@
 
 #include "base/base.h"
 #include "base/base.c"
+#include "config.h"
 #include "config.c"
 #include "smtp.c"
+#include "threadpool.h"
+#include "threadpool.c"
 
-void sigchld_handler(int s) {
-  (void)s; // quiet unused variable warning
+typedef struct {
+  int fd;
+  char ip[INET6_ADDRSTRLEN];
+} ClientInfo;
 
-  // waitpid() might overwrite errno, so we save and restore it:
-  int saved_errno = errno;
-
-  while (waitpid(-1, NULL, WNOHANG) > 0)
-    ;
-
-  errno = saved_errno;
-}
+#define RECV_CAP KB(4)
 
 // get sockaddr, IPv4 or IPv6:
 void *get_in_addr(struct sockaddr *sa) {
@@ -33,6 +31,59 @@ void *get_in_addr(struct sockaddr *sa) {
   }
 
   return &(((struct sockaddr_in6 *)sa)->sin6_addr);
+}
+
+void handle_client(void *payload) {
+  ClientInfo *info = (ClientInfo *)payload;
+  Arena *arena = arena_scratch_get(0, 0).arena;
+  Config *conf = current_worker->conf;
+  int new_fd = info->fd;
+  String8 ready_rep = smtp_reply_ready(arena, conf->addr);
+  if (send(new_fd, ready_rep.str, ready_rep.size, 0) == -1) {
+    perror("send");
+  }
+
+  String8 recv_buff = {.str = arena_push(arena, RECV_CAP, true), .size = 0};
+  String8 line_buff = {.str = arena_push(arena, RECV_CAP, true), .size = 0};
+
+  while (1) {
+    Temp scratch = arena_scratch_get(0, 0);
+    // drain the line buffer
+    String8 total = str8_concat(scratch.arena, line_buff, recv_buff);
+    u64 pos = str8_find(total, CRLF);
+    while (total.size >= 0 && pos != total.size) {
+      String8 line = {.str = total.str, .size = pos};
+      // process line
+      // smtp_process_command(line);
+
+      total.str = total.str + pos + CRLF.size;
+      total.size -= pos;
+
+      pos = str8_find(total, CRLF);
+    }
+
+    // store the remaining messages in the line buffer
+    memcpy(line_buff.str, total.str, total.size);
+    line_buff.size = total.size;
+
+    // recv more message
+    ssize_t n = recv(new_fd, recv_buff.str, RECV_CAP, 0);
+    if (n == -1) {
+      perror("recv");
+      break;
+    }
+    if (n == 0) {
+      // todo: log message server closed
+      break;
+    }
+    recv_buff.str[n] = 0;
+    recv_buff.size = n;
+    printf("recv: %.*s\n", (int)n, recv_buff.str);
+
+    arena_scratch_release(scratch);
+  }
+
+  close(new_fd);
 }
 
 int main(int argc, char *argv[]) {
@@ -53,7 +104,8 @@ int main(int argc, char *argv[]) {
   hints.ai_socktype = SOCK_STREAM;
   // hints.ai_flags = AI_PASSIVE; // use my ip
 
-  if ((status = getaddrinfo((char *)conf.addr.str, (char *)conf.smtp_port.str, &hints, &res)) != 0) {
+  if ((status = getaddrinfo((char *)conf.addr.str, (char *)conf.smtp_port.str,
+                            &hints, &res)) != 0) {
     fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(status));
     return 2;
   }
@@ -62,7 +114,7 @@ int main(int argc, char *argv[]) {
 
   int sockfd, new_fd;
   int yes = 1;
-  char* addrstr = arena_push(arena, 52, 1);
+  char *addrstr = arena_push(arena, 52, 1);
   for (p = res; p != NULL; p = p->ai_next) {
     inet_ntop(p->ai_family, get_in_addr(p->ai_addr), addrstr, 52);
     printf("  %s\n", addrstr);
@@ -97,23 +149,14 @@ int main(int argc, char *argv[]) {
     exit(1);
   }
 
-  // reap all dead process
-  struct sigaction sa;
-  sa.sa_handler = sigchld_handler;
-  sigemptyset(&sa.sa_mask);
-  sa.sa_flags = SA_RESTART;
-  if (sigaction(SIGCHLD, &sa, NULL) == -1) {
-    perror("sigaction");
-    exit(1);
-  }
-
   printf("server: waiting for connections...\n");
+
+  // TODO: take arg for configuration of num of threads
+  ThreadPool *pool = threadpool_create(arena, &conf, 8, 32);
 
   struct sockaddr_storage their_addr; // connector's address info
   socklen_t sin_size;
   char *addr_buff = arena_push(arena, INET6_ADDRSTRLEN, true);
-  String8 recv_buff = {.size = 512};
-  recv_buff.str = arena_push(arena, recv_buff.size + 1, true);
   while (1) { // main accept() loop
     sin_size = sizeof their_addr;
     new_fd = accept(sockfd, (struct sockaddr *)&their_addr, &sin_size);
@@ -126,16 +169,11 @@ int main(int argc, char *argv[]) {
               addr_buff, INET6_ADDRSTRLEN);
     printf("server: got connection from %s\n", addr_buff);
 
-    if (!fork()) {   // this is the child process
-      close(sockfd); // child doesn't need the listener
-      // if (send(new_fd, "Hello, world!", 13, 0) == -1)
-      //   perror("send");
-      recv(new_fd, recv_buff.str, recv_buff.size, 0);
-      printf("recv: %s\n", recv_buff.str);
-      close(new_fd);
-      exit(0);
-    }
-    close(new_fd); // parent doesn't need this
+    ClientInfo info = {.fd = new_fd};
+    memcpy(info.ip, addr_buff, INET6_ADDRSTRLEN);
+
+    threadpool_add(pool, handle_client, &info, sizeof(info));
   }
+
   return 0;
 }

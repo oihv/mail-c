@@ -1,0 +1,12 @@
+#ifndef CONFIG_H
+#define CONFIG_H
+
+// NOTE: String should live in the arena that is provided to config_from_file
+typedef struct {
+  String8 addr;
+  String8 smtp_port;
+  String8 pop3_port;
+  String8 username;
+} Config;
+
+#endif

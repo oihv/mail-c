@@ -1,0 +1,10 @@
+// raddbg 0.9.29 project file
+
+target:
+{
+  executable: "build/server"
+  working_directory: ""
+  enabled: 1
+  debug_subprocesses: 1
+  arguments: "./test.config"
+}

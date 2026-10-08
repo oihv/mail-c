@@ -1,16 +1,7 @@
 #include <stdcountof.h>
 #include <stdio.h>
 #include <netinet/in.h>
-
-#include "base/base.h"
-
-// NOTE: String should live in the arena that is provided to config_from_file
-typedef struct {
-  String8 addr;
-  String8 smtp_port;
-  String8 pop3_port;
-  String8 username;
-} Config;
+#include "config.h"
 
 Config config_from_file(Arena* arena, String8 path) {
   FILE* fp = fopen((char *)path.str, "r");
@@ -24,26 +15,26 @@ Config config_from_file(Arena* arena, String8 path) {
 
   String8 buff_str = str8((u8 *) buff, strlen(buff));
   String8 newline = str8_lit("\n");
-  String8List lines = str8_split(temp.arena, &buff_str, &newline);
+  String8List lines = str8_split(temp.arena, buff_str, newline);
 
   String8 equal = str8_lit("=");
   for EachNode(line, String8Node, lines.first) {
-    String8List pair = str8_split(temp.arena, &line->str, &equal);
-    String8 key = str8_trim_whitespace(&pair.first->str);
-    String8 val = str8_trim_whitespace(&pair.last->str);
+    String8List pair = str8_split(temp.arena, line->str, equal);
+    String8 key = str8_trim_whitespace(pair.first->str);
+    String8 val = str8_trim_whitespace(pair.last->str);
 
     u8* temp_c = arena_push(arena, (val.size + 1) * sizeof(u8), 1); // +1 for null terminator
     memcpy(temp_c, val.str, val.size);
     String8 temp_str = str8_cstring((char*)temp_c);
-    if (str8_compare_cstring(&key, "address")) {
+    if (str8_compare_cstring(key, "address")) {
       res.addr = temp_str;
-    } else if (str8_compare_cstring(&key, "smtp_port")) {
+    } else if (str8_compare_cstring(key, "smtp_port")) {
       // TODO: check max value
       res.smtp_port = temp_str;
-    } else if (str8_compare_cstring(&key, "pop3_port")) {
+    } else if (str8_compare_cstring(key, "pop3_port")) {
       // TODO: check max value
       res.pop3_port = temp_str;
-    } else if (str8_compare_cstring(&key, "username")) {
+    } else if (str8_compare_cstring(key, "username")) {
       res.username = temp_str;
     } else {
       printf("config: key %.*s not recognized\n", str8_fmt(key));

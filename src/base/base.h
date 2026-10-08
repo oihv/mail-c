@@ -108,11 +108,12 @@ typedef struct {
 fn String8 str8(u8 *str, u64 size);
 fn String8 str8_cstring(char* str);
 fn String8 str8_range(u8 *first, u8 *one_past_last);
-fn String8 str8_substr(String8 *str, u64 start, u64 end);
+fn String8 str8_substr(String8 str, u64 start, u64 end);
 fn String8 str8_concat(Arena *arena, String8 a, String8 b);
-fn String8 str8_trim_whitespace(String8 *a);
-fn b32 str8_compare(String8 *a, String8 *b);
-fn b32 str8_compare_cstring(String8 *a, char *b);
+fn String8 str8_trim_whitespace(String8 a);
+fn b32 str8_compare(String8 a, String8 b);
+fn b32 str8_compare_cstring(String8 a, char *b);
+fn u64 str8_find(String8 haystack, String8 needle); // return the pos of the found string, ret haystack size if not found
 
 // string copy/formatting
 #include <stdarg.h>
@@ -122,7 +123,7 @@ fn String8 str8fv(Arena *arena, char *fmt, va_list args);
 fn String8 str8f(Arena *arena, char *fmt, ...);
 
 // string conversion
-fn i32 str8_to_i32(String8* str);
+fn i32 str8_to_i32(String8 str);
 
 typedef struct String8Node String8Node;
 struct String8Node {
@@ -139,7 +140,7 @@ struct String8List {
 };
 
 fn String8Node *str8_list_push_node(String8List *list, String8Node *node);
-fn String8List str8_split(Arena *arena, String8 *target, String8 *delim);
+fn String8List str8_split(Arena *arena, String8 target, String8 delim);
 
 #define str8_lit(s)                                                            \
   str8((u8 *)(s), sizeof(s) - 1) // -1 because we don't need the null terminator
