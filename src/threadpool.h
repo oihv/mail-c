@@ -1,7 +1,7 @@
 #ifndef THREADPOOL_H
 #define THREADPOOL_H
 
-#define TASK_PAYLOAD_SIZE 64
+#define TASK_PAYLOAD_SIZE KB(4)
 #include "config.h"
 
 typedef struct Task {
@@ -24,8 +24,12 @@ typedef struct ThreadPool {
 typedef struct Worker {
   ThreadPool* pool;
   Config* conf;
+  u32 id;
+  String8 log_path;
+  Arena* session_arena;
 } Worker;
 
-extern _Thread_local Worker *current_worker;
+extern __thread Worker *current_worker;
+extern __thread u32 log_thread_id;
 
 #endif

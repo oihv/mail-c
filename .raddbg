@@ -4,7 +4,19 @@ target:
 {
   executable: "build/server"
   working_directory: ""
-  enabled: 1
   debug_subprocesses: 1
   arguments: "./test.config"
+  enabled: 1
+}
+target:
+{
+  executable: "build/client"
+  working_directory: "build/"
+  arguments: " 0 7777 1110"
+  enabled: 0
+}
+target:
+{
+  executable: "build/base/test"
+  working_directory: "build/base/"
 }

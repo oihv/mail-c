@@ -7,7 +7,7 @@ typedef enum {
   Flag_coba = (1 << 2),
 } Example_Flag;
 int main() {
-  Arena *perm_arena = arena_alloc(MB(5), KB(4));
+  Arena* perm_arena = arena_alloc(MB(5), KB(4));
 
   {
     printf("-----------String concat:\n");
@@ -69,8 +69,8 @@ int main() {
   {
     printf("----------Compare strings:\n");
     String8 test = str8_lit("John Carmack");
-    String8 sub1 = str8_substr(test, 0, 4);
-    String8 sub2 = str8_substr(test, 5, 12);
+    String8 sub1 = str8_substr(test, r1u64(0, 4));
+    String8 sub2 = str8_substr(test, r1u64(5, 12));
     StrEvalPrint(sub1);
     StrEvalPrint(sub2);
     printf("\n");
@@ -84,37 +84,88 @@ int main() {
     String8 delim1 = str8_lit(" ");
     StrEvalPrint(delim1);
     String8List res1 = str8_split(perm_arena, test1, delim1);
-    for EachNode(i, String8Node, res1.first) {
-      StrEvalPrint(i->str);
-    }
+    for
+      EachNode(i, String8Node, res1.first) { StrEvalPrint(i->string); }
     printf("---------------single chars2:\n");
     String8 test3 = str8_lit("op1=12op2=23op3=34");
     StrEvalPrint(test3);
     String8 delim3 = str8_lit("");
     StrEvalPrint(delim3);
     String8List res3 = str8_split(perm_arena, test3, delim3);
-    for EachNode(i, String8Node, res3.first) {
-      StrEvalPrint(i->str);
-    }
-    printf("---------------single chars:\n");
+    for
+      EachNode(i, String8Node, res3.first) { StrEvalPrint(i->string); }
+    printf("---------------single chars3:\n");
     String8 test4 = str8_lit("op1=34");
     StrEvalPrint(test4);
     String8 delim4 = str8_lit("=");
     StrEvalPrint(delim4);
     String8List res4 = str8_split(perm_arena, test4, delim4);
-    for EachNode(i, String8Node, res4.first) {
-      StrEvalPrint(i->str);
-    }
+    for
+      EachNode(i, String8Node, res4.first) { StrEvalPrint(i->string); }
+    printf("---------------single chars4:\n");
+    String8 test5 = str8_lit("<<nikolas@bit.com>");
+    StrEvalPrint(test5);
+    String8 delim5 = str8_lit("<");
+    StrEvalPrint(delim5);
+    String8List res5 = str8_split(perm_arena, test5, delim5);
+    for
+      EachNode(i, String8Node, res5.first) { StrEvalPrint(i->string); }
     printf("---------------multi chars:\n");
-    String8 test2 = str8_lit("nikolasanjaycprogramminganjayarenaallocatoranjaysimplicity");
+    String8 test2 =
+        str8_lit("nikolasanjaycprogramminganjayarenaallocatoranjaysimplicity");
     StrEvalPrint(test2);
     String8 delim2 = str8_lit("anjay");
     StrEvalPrint(delim2);
     String8List res2 = str8_split(perm_arena, test2, delim2);
-    for EachNode(i, String8Node, res2.first) {
-      StrEvalPrint(i->str);
-    }
+    for
+      EachNode(i, String8Node, res2.first) { StrEvalPrint(i->string); }
     printf("\n");
+  }
+
+  {
+    printf("----------Join string list:\n");
+    {
+      printf("---------------no optional param:\n");
+      String8List list1 = {0};
+      String8Node node1 = {.string = str8_lit("log system")};
+      String8Node node2 = {.string = str8_lit("pop3")};
+      String8Node node3 = {.string = str8_lit("smtp")};
+      String8Node node4 = {.string = str8_lit("gui")};
+      String8Node node5 = {.string = str8_lit("database")};
+      str8_list_push_node(&list1, &node1);
+      str8_list_push_node(&list1, &node2);
+      str8_list_push_node(&list1, &node3);
+      str8_list_push_node(&list1, &node4);
+      str8_list_push_node(&list1, &node5);
+      for
+        EachNode(i, String8Node, list1.first) { StrEvalPrint(i->string); }
+      String8 res = str8_list_join(perm_arena, &list1, 0);
+      StrEvalPrint(res);
+      printf("\n");
+    }
+    {
+      printf("---------------with optional param:\n");
+      String8List list1 = {0};
+      StringJoin join = {.pre = str8_lit("network project:"), .sep = str8_lit("|"), .post = str8_lit("done")};;
+      StrEvalPrint(join.pre);
+      StrEvalPrint(join.sep);
+      StrEvalPrint(join.post);
+      String8Node node1 = {.string = str8_lit("log system")};
+      String8Node node2 = {.string = str8_lit("pop3")};
+      String8Node node3 = {.string = str8_lit("smtp")};
+      String8Node node4 = {.string = str8_lit("gui")};
+      String8Node node5 = {.string = str8_lit("database")};
+      str8_list_push_node(&list1, &node1);
+      str8_list_push_node(&list1, &node2);
+      str8_list_push_node(&list1, &node3);
+      str8_list_push_node(&list1, &node4);
+      str8_list_push_node(&list1, &node5);
+      for
+        EachNode(i, String8Node, list1.first) { StrEvalPrint(i->string); }
+      String8 res = str8_list_join(perm_arena, &list1, &join);
+      StrEvalPrint(res);
+      printf("\n");
+    }
   }
 
   {
@@ -131,6 +182,21 @@ int main() {
     StrEvalPrint(test2);
     StrEvalPrint(target2);
     EvalPrint(pos2);
+    printf("\n");
+  }
+
+  {
+    printf("----------write file:\n");
+    String8 test = str8_lit("here is a test chunk");
+    StrEvalPrint(test);
+    // write_data_to_file_path(str8_lit("./test.txt"), test);
+    printf("\n");
+  }
+  {
+    printf("----------append file:\n");
+    String8 test = str8_lit("newly added chunk");
+    StrEvalPrint(test);
+    // append_data_to_file_path(str8_lit("./test.txt"), test);
     printf("\n");
   }
 

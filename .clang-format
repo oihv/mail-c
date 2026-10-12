@@ -1,1 +1,3 @@
 SortIncludes: Never
+PointerAlignment: Left
+DerivePointerAlignment: false

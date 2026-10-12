@@ -4,6 +4,9 @@
 #include "base/base.c"
 #include "config.c"
 #include "smtp.c"
+#include "threadpool.c"
+#include "parse.c"
+#include "imf.c"
 
 void test_assert(String8 msg, int x) {
   printf("%.*s... ", str8_fmt(msg));
@@ -47,6 +50,12 @@ int main() {
       String8 expect =
           str8_lit("221 (0.0.0.0) Service closing transmission channel\r\n");
       test_assert(str8_lit("smtp_reply_closing"), str8_compare(res, expect));
+    }
+    {
+      String8 data = str8_lit("This is just a message");
+      String8 from = str8_lit("okay@then.com");
+      String8 imf_res = imf_message_compose(scratch.arena, imf_local_date(scratch.arena), from, data);
+      StrEvalPrint(imf_res);
     }
   }
   arena_scratch_release(scratch);

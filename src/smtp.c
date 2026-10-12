@@ -1,4 +1,6 @@
-#include "base/base.h"
+#include "config.h"
+#include "threadpool.h"
+#include "parse.h"
 typedef enum {
   RC_SERVICE_READY = 220,
   RC_CLOSING_TRANSMISSION_CHANNEL = 221,
@@ -18,9 +20,21 @@ typedef enum {
   SMTP_QUIT,
 } SMTP_Command;
 
+typedef struct {
+  Arena* arena;
+  Temp temp;
+  String8 sender; // for sending Mail
+  String8 username; // for authentication
+  String8List recipients;
+  String8List data;
+  Config* conf;
+  b32 reading_data;
+  SMTP_Command prev_command;
+} Session;
+
 String8 CRLF = (String8){.str = (u8 *)"\r\n", .size = 2};
 
-String8 smtp_reply_format_line(Arena* arena, SMTP_ReplyCode rc, String8 text) {
+String8 smtp_reply_format_line(Arena *arena, SMTP_ReplyCode rc, String8 text) {
   Temp scratch = arena_scratch_get(0, 0);
   String8 rc_str = str8f(scratch.arena, "%d ", rc);
   String8 content = str8_concat(scratch.arena, rc_str, text);
@@ -35,8 +49,11 @@ String8 smtp_reply_format_line(Arena* arena, SMTP_ReplyCode rc, String8 text) {
 // NOTE: expects hostname to not have parentheses
 String8 smtp_reply_ready(Arena *arena, String8 hostname) {
   Temp scratch = arena_scratch_get(&arena, 1);
-  String8 hostname_parentheses = str8f(scratch.arena, "(%.*s)", str8_fmt(hostname));
-  String8 content = str8_concat(scratch.arena, hostname_parentheses, str8_lit(" Simple Mail Transfer Protocol Ready"));
+  String8 hostname_parentheses =
+      str8f(scratch.arena, "(%.*s)", str8_fmt(hostname));
+  String8 content =
+      str8_concat(scratch.arena, hostname_parentheses,
+                  str8_lit(" Simple Mail Transfer Protocol Ready"));
   String8 res = smtp_reply_format_line(arena, RC_SERVICE_READY, content);
 
   arena_scratch_release(scratch);
@@ -45,9 +62,13 @@ String8 smtp_reply_ready(Arena *arena, String8 hostname) {
 
 String8 smtp_reply_closing(Arena *arena, String8 hostname) {
   Temp scratch = arena_scratch_get(&arena, 1);
-  String8 hostname_parentheses = str8f(scratch.arena, "(%s)", (char*) hostname.str);
-  String8 content = str8_concat(scratch.arena, hostname_parentheses, str8_lit(" Service closing transmission channel"));
-  String8 res = smtp_reply_format_line(arena, RC_CLOSING_TRANSMISSION_CHANNEL, content);
+  String8 hostname_parentheses =
+      str8f(scratch.arena, "(%s)", (char *)hostname.str);
+  String8 content =
+      str8_concat(scratch.arena, hostname_parentheses,
+                  str8_lit(" Service closing transmission channel"));
+  String8 res =
+      smtp_reply_format_line(arena, RC_CLOSING_TRANSMISSION_CHANNEL, content);
 
   arena_scratch_release(scratch);
   return res;
@@ -60,64 +81,165 @@ String8 smtp_reply_ok(Arena *arena) {
 }
 
 String8 smtp_reply_start_mail_input(Arena *arena) {
-  String8 res = smtp_reply_format_line(arena, RC_START_MAIL_INPUT, str8_lit("Start mail input; end with <CRLF>.<CRLF>"));
+  String8 res = smtp_reply_format_line(
+      arena, RC_START_MAIL_INPUT,
+      str8_lit("Start mail input; end with <CRLF>.<CRLF>"));
   return res;
 }
 
 String8 smtp_reply_service_not_avail(Arena *arena) {
-  String8 res = smtp_reply_format_line(arena, RC_SERVICE_NOT_AVAIL, str8_lit("Service is not implemented"));
+  String8 res = smtp_reply_format_line(arena, RC_SERVICE_NOT_AVAIL,
+                                       str8_lit("Service is not implemented"));
   return res;
 }
 
 String8 smtp_reply_unknown_command(Arena *arena) {
-  String8 res = smtp_reply_format_line(arena, RC_UNKNOWN_COMMAND, str8_lit("Unknown command"));
+  String8 res = smtp_reply_format_line(arena, RC_UNKNOWN_COMMAND,
+                                       str8_lit("Unknown command"));
   return res;
 }
 
 String8 smtp_reply_syntax_error(Arena *arena) {
-  String8 res = smtp_reply_format_line(arena, RC_SYNTAX_ERROR, str8_lit("Syntax error"));
+  String8 res =
+      smtp_reply_format_line(arena, RC_SYNTAX_ERROR, str8_lit("Syntax error"));
   return res;
 }
 
 String8 smtp_reply_recipient_rejected(Arena *arena) {
-  String8 res = smtp_reply_format_line(arena, RC_REJECT, str8_lit("Recipient rejected"));
+  String8 res =
+      smtp_reply_format_line(arena, RC_REJECT, str8_lit("Recipient rejected"));
+  return res;
+}
+
+SMTP_ReplyCode smtp_get_reply_code(String8 reply) {
+  String8 code = str8_substr(reply, r1u64(0, 3));
+  SMTP_ReplyCode res = (SMTP_ReplyCode) str8_to_i32(code);
   return res;
 }
 
 // ----- SMTP command functions
 // NOTE: expects hostname to not have parentheses
-String8 smtp_command_ehlo(Arena* arena, String8 rcpt) {
-  String8 res = str8f(arena, "EHLO (%.*s)", str8_fmt(rcpt));
+String8 smtp_command_ehlo(Arena *arena, String8 rcpt) {
+  String8 res = str8f(arena, "EHLO (%.*s)%.*s", str8_fmt(rcpt), str8_fmt(CRLF));
+  return res;
+}
+
+String8 smtp_command_from(Arena *arena, String8 from) {
+  String8 res =
+      str8f(arena, "MAIL FROM: <%.*s>%.*s", str8_fmt(from), str8_fmt(CRLF));
+  return res;
+}
+
+String8 smtp_command_to(Arena *arena, String8 to) {
+  String8 res =
+      str8f(arena, "RCPT TO: <%.*s>%.*s", str8_fmt(to), str8_fmt(CRLF));
   String8 res_crlf = str8_concat(arena, res, CRLF);
   return res_crlf;
 }
 
-String8 smtp_command_from(Arena* arena, String8 from) {
-  String8 res = str8f(arena, "MAIL FROM: <%.*s>", str8_fmt(from));
-  String8 res_crlf = str8_concat(arena, res, CRLF);
-  return res_crlf;
+String8 smtp_command_data(Arena *arena) {
+  String8 res = str8f(arena, "DATA%.*s", str8_fmt(CRLF));
+  return res;
 }
 
-String8 smtp_command_to(Arena* arena, String8 to) {
-  String8 res = str8f(arena, "RCPT TO: <%.*s>", str8_fmt(to));
-  String8 res_crlf = str8_concat(arena, res, CRLF);
-  return res_crlf;
+String8 smtp_command_quit(Arena *arena) {
+  String8 res = str8f(arena, "QUIT%.*s", str8_fmt(CRLF));
+  return res;
 }
 
-String8 smtp_command_data(Arena* arena) {
-  String8 res = str8_lit("DATA");
-  String8 res_crlf = str8_concat(arena, res, CRLF);
-  return res_crlf;
-}
+String8 smtp_process_line(Arena* arena, Session* state, String8 line) {
+  Temp scratch = arena_scratch_get(&arena, 1);
+  String8 reply = {0};
 
-String8 smtp_command_quit(Arena* arena) {
-  String8 res = str8_lit("QUIT");
-  String8 res_crlf = str8_concat(arena, res, CRLF);
-  return res_crlf;
-}
-
-void smtp_process_command(String8 cmd) {
   // parse the command
-  // take action based on the command (decode the command)
-  // NOTE: what if there's error? how should error be propagated?
+  if (state->reading_data) {
+    if (line.size == 1 && line.str[0] == '.') {
+      log_infof(
+          "[t%u] [info] DATA termination received. Stopped reading data\n",
+          log_thread_id);
+      state->reading_data = false;
+      String8 data_joined =
+          str8_list_join(state->arena, &state->data,
+                         &(StringJoin){.sep = str8_lit("\n")});
+      // StrEvalPrint(data_joined);
+      // TODO: pass to db
+    } else {
+      log_infof("[t%u] [info] reading data...\n", log_thread_id);
+      String8 data_line = str8_copy(state->arena, line);
+      String8Node* node = arena_push(arena, sizeof(String8Node), 1);
+      node->string = data_line;
+      str8_list_push_node(&state->data, node);
+    }
+
+  } else if (str8_compare(str8_substr(line, r1u64(0, 4)), str8_lit("EHLO"))) {
+    log_infof("[t%u] [info] read EHLO command\n", log_thread_id);
+    state->prev_command = SMTP_EHLO;
+    reply = smtp_reply_ok(arena);
+
+  } else if (str8_compare(str8_substr(line, r1u64(0, 9)),
+                          str8_lit("MAIL FROM"))) {
+    log_infof("[t%u] [info] read MAIL FROM command\n", log_thread_id);
+    if (state->prev_command != SMTP_EHLO) {
+      log_user_errorf("[t%u] [error] client haven't sent EHLO command\n",
+                      log_thread_id);
+      reply = smtp_reply_syntax_error(arena);
+    }
+
+    state->prev_command = SMTP_MAIL_FROM;
+
+    // get the sender
+    String8List list = str8_split(scratch.arena, line, str8_lit("<"));
+    if (list.node_count != 2) {
+      reply = smtp_reply_syntax_error(arena);
+      log_user_errorf("[t%u] [error] MAIL FROM command got dubious syntax\n",
+                      log_thread_id);
+    } else {
+      String8 sender = parse_mail_address(list.last->string);
+      state->sender = str8_copy(state->arena, sender);
+      log_infof("[t%u] [info] Successfully parsed sender address: %.*s\n",
+                log_thread_id, str8_fmt(sender));
+
+      reply = smtp_reply_ok(arena);
+    }
+
+  } else if (str8_compare(str8_substr(line, r1u64(0, 7)),
+                          str8_lit("RCPT TO"))) {
+    log_infof("[t%u] [info] read RCPT TO command\n", log_thread_id);
+    if (state->prev_command != SMTP_MAIL_FROM && state->prev_command != SMTP_RCPT_TO) {
+      log_user_errorf("[t%u] [error] MAIL FROM command got dubious syntax\n",
+                      log_thread_id);
+      reply = smtp_reply_syntax_error(arena);
+    }
+    state->prev_command = SMTP_RCPT_TO;
+
+    // get the recipient
+    String8List list = str8_split(scratch.arena, line, str8_lit("<"));
+    if (list.node_count != 2) {
+      log_user_errorf("[t%u] [error] RCPT TO command got dubious syntax\n",
+                      log_thread_id);
+      reply = smtp_reply_syntax_error(arena);
+    } else {
+      String8 recipient = parse_mail_address(list.last->string);
+      str8_list_push(state->arena, &state->recipients, recipient);
+      log_infof("[t%u] [info] Successfully parsed recipient address: %.*s\n",
+                log_thread_id, str8_fmt(recipient));
+      reply = smtp_reply_ok(arena);
+    }
+
+  } else if (str8_compare(str8_substr(line, r1u64(0, 4)), str8_lit("DATA"))) {
+    log_infof("[t%u] [info] read DATA command\n", log_thread_id);
+    state->prev_command = SMTP_DATA;
+    state->reading_data = true;
+    log_infof("[t%u] [info] start reading DATA...\n", log_thread_id);
+    reply = smtp_reply_start_mail_input(arena);
+
+  } else if (str8_compare(str8_substr(line, r1u64(0, 4)), str8_lit("QUIT"))) {
+    log_infof("[t%u] [info] read QUIT command, quitting...", log_thread_id);
+    state->prev_command = SMTP_QUIT;
+    reply = smtp_reply_closing(arena, state->conf->addr);
+  }
+
+  // NOTE: what if there's error? how should error be propagated? log system
+  arena_scratch_release(scratch);
+  return reply;
 }

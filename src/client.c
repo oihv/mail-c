@@ -16,82 +16,221 @@
 
 #include "base/base.h"
 #include "base/base.c"
+#include "threadpool.h"
+#include "threadpool.c"
+#include "network.c"
+#include "parse.c"
+#include "smtp.c"
+#include "pop3.c"
 
-// get sockaddr, IPv4 or IPv6:
-void *get_in_addr(struct sockaddr *sa) {
-  if (sa->sa_family == AF_INET) {
-    return &(((struct sockaddr_in *)sa)->sin_addr);
-  }
+typedef enum {
+  CLI_State_Login,
+  CLI_State_Menu,
+  CLI_State_Inbox,
+  CLI_State_Compose,
+  CLI_State_COUNT
+} CLI_State;
 
-  return &(((struct sockaddr_in6 *)sa)->sin6_addr);
-}
+typedef struct {
+  CLI_State current_state;
+  String8 user_email;
+  String8 smtp_port;
+  String8 pop3_port;
+  int smtp_fd;
+  int pop3_fd;
+  String8 recv_buf;
+  String8 log_path;
+} CLI;
 
-int main(int argc, char *argv[]) {
-  int sockfd;
-  struct addrinfo hints, *servinfo, *p;
-  int rv;
-  char s[INET6_ADDRSTRLEN];
+#define MAX_USERNAME_LENGTH 256
+#define MAX_PASS_LENGTH 256
+void cli_login(Arena* arena, CLI* ctx) {
+  Temp scratch = arena_scratch_get(0, 0);
+  String8 username = {
+      .str = arena_push(scratch.arena, sizeof(u8) * MAX_USERNAME_LENGTH, 1),
+      .size = 0};
+  String8 password = {
+      .str = arena_push(scratch.arena, sizeof(u8) * MAX_PASS_LENGTH, 1),
+      .size = 0};
 
-  if (argc != 3) {
-    fprintf(stderr, "usage: client hostname port\n");
-    exit(1);
-  }
+  while (1) {
+    Temp scratch2 = arena_scratch_get(&scratch.arena, 1);
+    printf("Enter your email address:\n");
+    scanf("%s", username.str);
+    username.size = strlen((char*)username.str);
+    username.str[username.size] = 0;
+    username = str8_skip_chop_whitespace(username);
 
-  memset(&hints, 0, sizeof hints);
-  hints.ai_family = AF_UNSPEC;
-  hints.ai_socktype = SOCK_STREAM;
-
-  if ((rv = getaddrinfo(argv[1], argv[2], &hints, &servinfo)) != 0) {
-    fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(rv));
-    return 1;
-  }
-
-  // loop through all the results and connect to the first we can
-  for (p = servinfo; p != NULL; p = p->ai_next) {
-    if ((sockfd = socket(p->ai_family, p->ai_socktype, p->ai_protocol)) == -1) {
-      perror("client: socket");
+    log_scope_begin();
+    b32 res =
+        pop3_send_and_response_ok(ctx->pop3_fd,
+                                  str8f(scratch2.arena, "USER %.*s %.*s",
+                                        str8_fmt(username), str8_fmt(CRLF)),
+                                  &ctx->recv_buf);
+    LogScopeResult log = log_scope_end(scratch2.arena);
+    append_data_to_file_path(ctx->log_path, log.strings[LogMsgKind_Info]);
+    if (log_active && log.strings[LogMsgKind_UserError].size != 0) {
+      append_data_to_file_path(ctx->log_path,
+                               log.strings[LogMsgKind_UserError]);
       continue;
     }
 
-    inet_ntop(p->ai_family, get_in_addr((struct sockaddr *)p->ai_addr), s,
-              sizeof s);
-    printf("client: attempting connection to %s\n", s);
+    if (res == 0) {
+      printf("Username not recognized by the server.\nTry again\n");
+      continue;
+    }
 
-    if (connect(sockfd, p->ai_addr, p->ai_addrlen) == -1) {
-      perror("client: connect");
-      close(sockfd);
+    arena_scratch_release(scratch2);
+    break;
+  }
+
+  while (1) {
+    printf("Enter the password for username %.*s:\n", str8_fmt(username));
+    scanf("%s", password.str);
+    password.size = strlen((char*)password.str);
+    password.str[password.size] = 0;
+
+    // TODO: match to db
+    if (!str8_compare_cstring(password, "1234")) {
+      printf("Wrong password!\nTry Again\n");
       continue;
     }
 
     break;
   }
+  printf("Login successful\n");
 
-  if (p == NULL) {
-    fprintf(stderr, "client: failed to connect\n");
-    return 2;
+  ctx->user_email = str8_copy(arena, username);
+
+  arena_scratch_release(scratch);
+}
+
+void cli_menu(CLI* ctx) {
+  printf("---EMAIL CLIENT MENU---\n[1] check inbox\n[2] compose and send "
+         "email\n[q] quit\n");
+  char opt;
+  b32 ok = 0;
+  while (!ok) {
+    printf("Select menu (1,2,q):\n");
+
+    scanf("%s", &opt);
+
+    switch (opt) {
+    case '1':
+      ctx->current_state = CLI_State_Inbox;
+      ok = 1;
+      break;
+    case '2':
+      ctx->current_state = CLI_State_Compose;
+      ok = 1;
+      break;
+    case 'q':
+      printf("Quitting...\n");
+      exit(1);
+    default:
+      printf("Unexpected option, try again\n");
+      break;
+    }
+  }
+}
+
+void cli_inbox(CLI* ctx) {
+  printf("TODO inbox\n");
+  scanf("");
+}
+
+void cli_compose(CLI* ctx) {
+  printf("TODO compose\n");
+  scanf("");
+}
+
+int main(int argc, char* argv[]) {
+  Arena* perm_arena = arena_alloc(MB(64), KB(64));
+  log_active = log_alloc();
+  CLI ctx = {0};
+
+  if (argc != 4) {
+    fprintf(stderr, "usage: client [hostname] [SMTP port] [POP3 port] <client "
+                    "log path>\n");
+    exit(1);
+  }
+  ctx.log_path = argc == 5 ? str8_cstring(argv[4]) : str8_lit("client.log");
+
+  // setup socket
+  ctx.smtp_port = str8_cstring(argv[2]);
+  ctx.pop3_port = str8_cstring(argv[3]);
+  ctx.pop3_fd =
+      connect_socket_get(str8_cstring(argv[1]), ctx.pop3_port);
+
+  LogScopeResult log = log_scope_end(perm_arena);
+  append_data_to_file_path(ctx.log_path, log.strings[LogMsgKind_Info]);
+  if (log_active && log.strings[LogMsgKind_UserError].size != 0) {
+    append_data_to_file_path(ctx.log_path, log.strings[LogMsgKind_UserError]);
+    exit(1);
   }
 
-  inet_ntop(p->ai_family, get_in_addr((struct sockaddr *)p->ai_addr), s,
-            sizeof s);
-  printf("client: connected to %s\n", s);
+  String8 recv_buf = {.str = arena_push(perm_arena, RECV_CAP + 1, true),
+                      .size = 0};
+  ctx.recv_buf = recv_buf;
 
-  freeaddrinfo(servinfo); // all done with this structure
+  log_scope_begin();
+  recv_until_crlf(ctx.pop3_fd, &ctx.recv_buf);
+  log = log_scope_end(perm_arena);
+  append_data_to_file_path(ctx.log_path, log.strings[LogMsgKind_Info]);
+  if (log_active && log.strings[LogMsgKind_UserError].size != 0) {
+    append_data_to_file_path(ctx.log_path, log.strings[LogMsgKind_UserError]);
+    exit(1);
+  }
 
-  Arena* arena = arena_alloc(MB(100), KB(1));
-  String8 buff_str = {.size = 512};
-  ssize_t n = recv(sockfd, buff_str.str, buff_str.size, 0);
-  // if ((numbytes = recv(sockfd, buf, MAXDATASIZE-1, 0)) == -1) {
-  //     perror("recv");
-  //     exit(1);
-  // }
-  //
-  // buf[numbytes] = '\0';
-  //
-  // printf("client: received '%s'\n",buf);
-  String8 send_buf = str8_lit("EHLO wocao\r\nnihao tongxue\r\nanjay\r\n");
-  send(sockfd, send_buf.str, send_buf.size, 0);
+  log_scope_begin();
+  i32 res = pop3_is_response_ok(ctx.recv_buf);
+  log = log_scope_end(perm_arena);
+  append_data_to_file_path(ctx.log_path, log.strings[LogMsgKind_Info]);
+  if (log_active && log.strings[LogMsgKind_UserError].size != 0) {
+    append_data_to_file_path(ctx.log_path, log.strings[LogMsgKind_UserError]);
+    exit(1);
+  }
 
-  close(sockfd);
+  if (res == 0) {
+    printf("POP3 server is not ready\n");
+    exit(1);
+  }
+
+  printf("Connected to server\n");
+
+  ctx.current_state = CLI_State_Login;
+  cli_login(perm_arena, &ctx);
+
+  ctx.current_state = CLI_State_Menu;
+
+  while (1) {
+    switch (ctx.current_state) {
+    case CLI_State_Login:
+    case CLI_State_Menu:
+      cli_menu(&ctx);
+      break;
+    case CLI_State_Inbox:
+      cli_inbox(&ctx);
+      break;
+    case CLI_State_Compose:
+      cli_compose(&ctx);
+      break;
+    case CLI_State_COUNT:
+      break;
+    }
+  }
+
+  // String8 send_buf = str8_lit("EHLO wocao\r\nMAIL FROM: anjay\r\nRCPT TO:
+  // woi\r\nDATA\r\nQUIT\r\n"); String8 send_buf = str8_lit("MAIL FROM:
+  // <nikolas@bit.com>   \r\n");
+  String8 send_buf = str8_lit(
+      "EHLO\r\nMAIL FROM: <nikolas@bit.com>\r\nRCPT TO: "
+      "<supreme@witch.calamitas>\r\nDATA\r\nHalo bro\r\nDone\r\n.\r\nQUIT\r\n");
+  send(ctx.pop3_fd, send_buf.str, send_buf.size, 0);
+  while (1)
+    ;
+
+  close(ctx.pop3_fd);
 
   return 0;
 }
