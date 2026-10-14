@@ -43,24 +43,34 @@ typedef struct {
   String8 log_path;
 } CLI;
 
+// Large enough for the biggest single input line (the recipient list, which is
+// MAX_RECIPIENT addresses of up to MAX_USERNAME_LENGTH bytes separated by ';').
+#define CLI_INPUT_CAP 4096
+
+// NOTE: AI
+// Reads one line from stdin, consuming the trailing newline, trims surrounding
+// whitespace, and copies the result into the arena. Because the newline is
+// consumed here, callers never need to drain stdin before another read. Returns
+// an empty string on EOF.
+String8 cli_read_line(Arena* arena) {
+  u8 buf[CLI_INPUT_CAP];
+  if (!fgets((char*)buf, sizeof(buf), stdin)) {
+    return (String8){0};
+  }
+  return str8_skip_chop_whitespace(str8_copy(arena, str8_cstring((char*)buf)));
+}
+
 #define MAX_USERNAME_LENGTH 256
 #define MAX_PASS_LENGTH 256
 void cli_login(Arena* arena, CLI* ctx) {
   Temp scratch = arena_scratch_get(0, 0);
-  String8 username = {
-      .str = arena_push(scratch.arena, sizeof(u8) * MAX_USERNAME_LENGTH, 1),
-      .size = 0};
-  String8 password = {
-      .str = arena_push(scratch.arena, sizeof(u8) * MAX_PASS_LENGTH, 1),
-      .size = 0};
+  String8 username = {0};
+  String8 password = {0};
 
   while (1) {
     Temp scratch2 = arena_scratch_get(&scratch.arena, 1);
     printf("Enter your email address:\n");
-    scanf("%s", username.str);
-    username.size = strlen((char*)username.str);
-    username.str[username.size] = 0;
-    username = str8_skip_chop_whitespace(username);
+    username = cli_read_line(scratch.arena);
 
     log_scope_begin();
     b32 res =
@@ -88,9 +98,7 @@ void cli_login(Arena* arena, CLI* ctx) {
   while (1) {
     Temp scratch2 = arena_scratch_get(&scratch.arena, 1);
     printf("Enter the password for username %.*s:\n", str8_fmt(username));
-    scanf("%s", password.str);
-    password.size = strlen((char*)password.str);
-    password.str[password.size] = 0;
+    password = cli_read_line(scratch.arena);
 
     log_scope_begin();
     b32 res =
@@ -123,33 +131,29 @@ void cli_login(Arena* arena, CLI* ctx) {
 }
 
 void cli_menu(CLI* ctx) {
+  Temp scratch = arena_scratch_get(0, 0);
   printf("---EMAIL CLIENT MENU---\n[1] check inbox\n[2] compose and send "
          "email\n[q] quit\n");
-  char opt;
   printf("Select menu (1,2,q):\n");
 
   b32 ok = 0;
   while (!ok) {
-    scanf("%s", &opt);
+    String8 opt = cli_read_line(scratch.arena);
     ok = 1;
 
-    switch (opt) {
-    case '1':
+    if (str8_compare_cstring(opt, "1")) {
       ctx->current_state = CLI_State_Inbox;
-      break;
-    case '2':
+    } else if (str8_compare_cstring(opt, "2")) {
       ctx->current_state = CLI_State_Compose;
-      break;
-    case 'q':
+    } else if (str8_compare_cstring(opt, "q")) {
       ctx->current_state = CLI_State_Quit;
       printf("Quitting...\n");
-      break;
-    default:
+    } else {
       printf("Unexpected option, try again\n");
       ok = 0;
-      break;
     }
   }
+  arena_scratch_release(scratch);
 }
 
 void cli_inbox(CLI* ctx) {
@@ -235,15 +239,14 @@ void cli_inbox(CLI* ctx) {
   // get input
   u64 choice = 0;
   while (1) {
-    char input;
-    scanf("%s", &input);
+    String8 input = cli_read_line(scratch.arena);
 
-    if (input == 'q') {
+    if (str8_compare_cstring(input, "q")) {
       ctx->current_state = CLI_State_Menu;
       return;
     }
 
-    choice = str8_to_u64(str8((u8*)&input, 1));
+    choice = str8_to_u64(input);
     if (choice < 1 || choice > octets.count) {
       printf("Selection out of range, try again\n");
       continue;
@@ -278,12 +281,8 @@ void cli_inbox(CLI* ctx) {
   ctx->recv_buf.size -= pos;
   printf("%.*s", str8_fmt(ctx->recv_buf));
 
-  char c;
   printf("[enter to continue.]");
-  // drain the remaining buffer
-  while ((c = getchar()) != '\n' && c != EOF)
-    ;
-  scanf("%c", &c);
+  cli_read_line(scratch.arena);
   arena_scratch_release(scratch);
 }
 
@@ -291,14 +290,9 @@ void cli_inbox(CLI* ctx) {
 #define MAX_DATA_LINE 1064
 void cli_compose(CLI* ctx) {
   Temp scratch = arena_scratch_get(0, 0);
-  String8 recipients = {
-      .str = arena_push(scratch.arena,
-                        sizeof(u8) * MAX_USERNAME_LENGTH * MAX_RECIPIENT, 1),
-      .size = 0};
 
   printf("Recipient To: (separate with \";\" for multiple recipients)\n");
-  scanf("%s", recipients.str);
-  recipients.size = strlen((char*)recipients.str);
+  String8 recipients = cli_read_line(scratch.arena);
 
   String8List recipient_list =
       str8_split(scratch.arena, recipients, str8_lit(";"));
@@ -308,12 +302,6 @@ void cli_compose(CLI* ctx) {
       .size = 0};
   String8List data_list = {0};
   printf("Enter your message: (end with blank line with \".\")\n");
-  {
-    // drain the remaining buffer
-    int c;
-    while ((c = getchar()) != '\n' && c != EOF)
-      ;
-  }
   while (1) {
     if (fgets((char*)data_line.str, sizeof(u8) * MAX_DATA_LINE, stdin)) {
       data_line.size = strlen((char*)data_line.str);
