@@ -277,6 +277,14 @@ void cli_inbox(CLI* ctx) {
   ctx->recv_buf.str += pos;
   ctx->recv_buf.size -= pos;
   printf("%.*s", str8_fmt(ctx->recv_buf));
+
+  char c;
+  printf("[enter to continue.]");
+  // drain the remaining buffer
+  while ((c = getchar()) != '\n' && c != EOF)
+    ;
+  scanf("%c", &c);
+  arena_scratch_release(scratch);
 }
 
 #define MAX_RECIPIENT 15

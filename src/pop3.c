@@ -128,7 +128,7 @@ String8 pop3_process_line(Arena* arena, Session* state, String8 line) {
       u64 octet = state->octets.v[index - 1];
       String8 mail = db_get_mail(arena, state->db, mail_id);
       StrEvalPrint(mail);
-      reply = str8f(arena, "+OK %lu octets%.*s%.*s%.*s", octet, str8_fmt(CRLF),
+      reply = str8f(arena, "+OK %lu octets%.*s%.*s.%.*s", octet, str8_fmt(CRLF),
                     str8_fmt(mail), str8_fmt(CRLF));
     }
 
