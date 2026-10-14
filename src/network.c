@@ -1,20 +1,4 @@
-#include "base/base.h"
-#include <netinet/in.h>
-#include <errno.h>
-#include <sys/socket.h>
-#include <sys/types.h>
-#include <netdb.h>
-#include <arpa/inet.h>
-#include <unistd.h>
-
-#define RECV_CAP KB(64)
-
-extern String8 CRLF;
-
-typedef enum { SMTP, POP3 } Protocol;
-
-String8 protocol_strings[] = {{.str = (u8*)"SMTP", .size = 4},
-                              {.str = (u8*)"POP3", .size = 4}};
+#include "network.h"
 
 // get sockaddr, IPv4 or IPv6:
 void* get_in_addr(struct sockaddr* sa) {
@@ -33,7 +17,7 @@ b32 recv_all(int fd, String8* buf) {
     log_user_errorf("[error] at recv %s\n", strerror(errno));
     return 0;
   } else if (n == 0) {
-    log_infof("[info] client closed the connection\n");
+    log_infof("[info] target closed the connection\n");
     return 0;
   } else {
     buf->str[n] = 0;
@@ -43,7 +27,6 @@ b32 recv_all(int fd, String8* buf) {
   }
 }
 
-// used by client since for now, the server only responses in one line.
 b32 recv_until_crlf(int fd, String8* buf) {
   if (!recv_all(fd, buf)) {
     return 0;
@@ -58,7 +41,20 @@ b32 recv_until_crlf(int fd, String8* buf) {
   return 1;
 }
 
-// networking helper functions
+b32 recv_until_dot_crlf(int fd, String8* buf) {
+  if (!recv_all(fd, buf)) {
+    return 0;
+  }
+  while (!str8_compare_cstring(str8_substr(*buf, r1u64(buf->size - 3, buf->size)),
+                      ".\r\n")) {
+    log_infof("[info] calling recv_all again since .\r\n is not found\n");
+    if (!recv_all(fd, buf)) {
+      return 0;
+    }
+  }
+  return 1;
+}
+
 b32 send_all(int fd, String8 data) {
   u64 sent = 0;
   while (sent < data.size) {

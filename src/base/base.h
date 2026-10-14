@@ -65,6 +65,12 @@ union Rng1U64 {
 
 fn Rng1U64 r1u64(u64 min, u64 max);
 
+typedef struct i64Array i64Array;
+struct i64Array {
+  i64* v;
+  u64 count;
+};
+
 // (NT): arena allocator
 typedef struct {
   u64 reserve_size;
@@ -162,6 +168,7 @@ fn String8 str8f(Arena* arena, char* fmt, ...);
 
 // string conversion
 fn i32 str8_to_i32(String8 str);
+fn u64 str8_to_u64(String8 str);
 
 // string list
 typedef struct String8Node String8Node;

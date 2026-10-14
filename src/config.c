@@ -44,6 +44,11 @@ Config config_from_file(Arena* arena, String8 path) {
       res.pop3_port = temp_str;
     } else if (str8_compare_cstring(key, "username")) {
       res.username = temp_str;
+    } else if (str8_compare_cstring(key, "db_path")) {
+      res.db_path = temp_str;
+      // null terminate because this will be used by sqlite
+      // sqlite uses null terminated string
+      temp_str.str[temp_str.size] = 0;
     } else if (str8_compare_cstring(key, "server_log_path")) {
       res.server_log_path = temp_str;
     } else if (str8_compare_cstring(key, "client_log_path")) {

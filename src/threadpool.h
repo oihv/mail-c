@@ -1,6 +1,8 @@
 #ifndef THREADPOOL_H
 #define THREADPOOL_H
 
+#include <sqlite3.h>
+
 #define TASK_PAYLOAD_SIZE KB(4)
 #include "config.h"
 
@@ -27,6 +29,7 @@ typedef struct Worker {
   u32 id;
   String8 log_path;
   Arena* session_arena;
+  sqlite3* db;
 } Worker;
 
 extern __thread Worker *current_worker;

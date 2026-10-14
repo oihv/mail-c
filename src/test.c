@@ -2,9 +2,10 @@
 
 #include "base/base.h"
 #include "base/base.c"
+#include "db.c"
 #include "config.c"
+__thread u32 log_thread_id = 0; // since some logs requires thread id
 #include "smtp.c"
-#include "threadpool.c"
 #include "parse.c"
 #include "imf.c"
 
@@ -52,7 +53,7 @@ int main() {
       test_assert(str8_lit("smtp_reply_closing"), str8_compare(res, expect));
     }
     {
-      String8 data = str8_lit("This is just a message");
+      String8 data = str8_lit("This is just a message\r\n");
       String8 from = str8_lit("okay@then.com");
       String8 imf_res = imf_message_compose(scratch.arena, imf_local_date(scratch.arena), from, data);
       StrEvalPrint(imf_res);

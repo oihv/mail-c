@@ -18,8 +18,8 @@ String8 imf_local_date(Arena* arena) {
 
 String8 imf_message_compose(Arena* arena, String8 date, String8 from,
                             String8 data) {
-  Temp scratch = arena_scratch_get(0, 0);
-  String8List list = {};
+  Temp scratch = arena_scratch_get(&arena, 1);
+  String8List list = {0};
   String8 date_head =
       str8f(scratch.arena, "Date: %.*s%.*s", str8_fmt(date), str8_fmt(CRLF));
   str8_list_push(scratch.arena, &list, date_head);
@@ -30,8 +30,12 @@ String8 imf_message_compose(Arena* arena, String8 date, String8 from,
   str8_list_push(scratch.arena, &list,
                  data); // TODO: there's a limit of 78 (should) and 998 (must)
                         // for each line in IMF
+                        // NOTE: data is assumed to already be CRLF terminated each line
   String8 end = str8f(scratch.arena, ".%.*s", str8_fmt(CRLF));
   str8_list_push(scratch.arena, &list, end);
+  // StringJoin join = {.post = str8_lit(".\r\n")};
 
   String8 res = str8_list_join(arena, &list, 0);
+  arena_scratch_release(scratch);
+  return res;
 }

@@ -1,6 +1,7 @@
 #include <pthread.h>
 #include "threadpool.h"
 #include "base/base.h"
+#include "db.h"
 
 __thread Worker* current_worker = NULL;
 __thread u32 log_thread_id = 0;
@@ -63,6 +64,7 @@ ThreadPool* threadpool_create(Arena* arena, Config* conf, int thread_count,
     workers[i].conf = conf;
     workers[i].pool = pool;
     workers[i].id = i;
+    workers[i].db = db_open(conf->db_path);
     workers[i].log_path =
         str8f(arena, "%.*s.t%u", str8_fmt(conf->server_log_path), i);
 

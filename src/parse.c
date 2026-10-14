@@ -1,5 +1,4 @@
 #include "base/base.h"
-#include "threadpool.h"
 
 // syntax: <mail@domain.xyz>
 String8 parse_mail_address(String8 s) {

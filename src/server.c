@@ -11,13 +11,15 @@
 
 #include "base/base.h"
 #include "base/base.c"
+#include "db.c"
+#include "threadpool.h"
+#include "threadpool.c"
 #include "config.h"
 #include "config.c"
+#include "network.h"
 #include "network.c"
 #include "smtp.c"
 #include "pop3.c"
-#include "threadpool.h"
-#include "threadpool.c"
 #include "parse.c"
 
 static b32 shutdown_flag = 0;
@@ -28,6 +30,7 @@ typedef struct {
   Protocol proto;
   ThreadPool* pool;
   String8 log_path;
+  sqlite3* db;
 } ClientInfo;
 
 void handle_client(void* payload) {
@@ -41,6 +44,7 @@ void handle_client(void* payload) {
   state.conf = conf;
   state.arena = current_worker->session_arena;
   state.temp = temp_begin(state.arena);
+  state.db = current_worker->db;
 
   log_scope_begin();
   log_infof("[t%u] [info] handling connection from %s, with protocol %.*s\n",
@@ -73,7 +77,7 @@ void handle_client(void* payload) {
       String8 line = {.str = total.str, .size = pos};
       log_infof("[t%u] [info] processing line:\n%.*s\n", log_thread_id,
                 str8_fmt(line));
-      String8 reply = info->proto == SMTP ? smtp_process_line(scratch.arena, &state, line) : pop3_process_line(arena, &state, line);
+      String8 reply = info->proto == SMTP ? smtp_process_line(scratch.arena, &state, line) : pop3_process_line(scratch.arena, &state, line);
 
       if (reply.size > 0) {
         if (!send_all(new_fd, reply)) {
@@ -83,7 +87,9 @@ void handle_client(void* payload) {
           break;
         }
 
-        if (smtp_get_reply_code(reply) == RC_CLOSING_TRANSMISSION_CHANNEL) {
+        if (info->proto == SMTP && smtp_get_reply_code(reply) == RC_CLOSING_TRANSMISSION_CHANNEL ||
+            info->proto == POP3 && str8_compare_cstring(line, "QUIT")) {
+          log_infof("[t%u] [info] client requested QUIT command\n", log_thread_id);
           quit = true;
           break;
         }
@@ -92,7 +98,7 @@ void handle_client(void* payload) {
       }
 
       total.str = total.str + pos + CRLF.size;
-      total.size -= pos;
+      total.size -= pos + CRLF.size;
 
       pos = str8_find(total, CRLF);
     }
@@ -218,9 +224,6 @@ int main(int argc, char* argv[]) {
 
   log_scope_begin();
   log_info(str8_lit("[info] got listening sockets...\n"));
-  log_info(str8_lit("[info] waiting for connections...\n"));
-  log = log_scope_end(arena);
-  append_data_to_file_path(conf.server_log_path, log.strings[LogMsgKind_Info]);
 
   // TODO: take arg for configuration of num of threads
   ThreadPool* pool = threadpool_create(arena, &conf, 8, 32);
@@ -240,8 +243,16 @@ int main(int argc, char* argv[]) {
   pthread_create(&t_smtp, NULL, acceptor_thread, &arg1);
   pthread_create(&t_pop3, NULL, acceptor_thread, &arg2);
 
+  log_info(str8_lit("[info] acceptor_thread for SMTP and POP3 port started\n"));
+  log_info(str8_lit("[info] threadpool created\n"));
+  log_info(str8_lit("[info] waiting for connections...\n"));
+  log = log_scope_end(arena);
+  append_data_to_file_path(conf.server_log_path, log.strings[LogMsgKind_Info]);
+
+  printf("press 'q' to shutdown the server\n");
   while (getchar() != 'q')
     ;
+  printf("shutting down server...\n");
   shutdown_flag = 1;
   shutdown(smtp_fd, SHUT_RDWR);
   shutdown(pop3_fd, SHUT_RDWR);

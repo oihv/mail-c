@@ -203,7 +203,7 @@ fn String8 str8_substr(String8 str, Rng1U64 range) {
 
 fn String8 str8_concat(Arena* arena, String8 a, String8 b) {
   String8 result = {.size = a.size + b.size};
-  result.str = arena_push(arena, result.size, 1);
+  result.str = arena_push(arena, result.size * sizeof(u8), 1);
   for
     EachIndex(i, a.size) { result.str[i] = a.str[i]; }
   for
@@ -286,7 +286,7 @@ fn u64 str8_find(String8 haystack, String8 needle) {
 fn String8 str8_copy(Arena* arena, String8 s) {
   String8 str;
   str.size = s.size;
-  str.str = arena_push(arena, str.size + 1, 1);
+  str.str = arena_push(arena, (str.size + 1)*sizeof(u8), 1);
   memcpy(str.str, s.str, s.size);
   str.str[str.size] = 0;
   return str;
@@ -316,6 +316,17 @@ fn String8 str8f(Arena* arena, char* fmt, ...) {
 fn i32 str8_to_i32(String8 str) {
   i32 acc = 0;
   i32 mul = 1;
+  for
+    EachIndexRev(i, str.size) {
+      acc += (str.str[i - 1] - '0') * mul;
+      mul *= 10;
+    }
+  return acc;
+}
+
+fn u64 str8_to_u64(String8 str) {
+  u64 acc = 0;
+  u64 mul = 1;
   for
     EachIndexRev(i, str.size) {
       acc += (str.str[i - 1] - '0') * mul;
@@ -374,7 +385,7 @@ fn String8 str8_list_join(Arena* arena, String8List* list,
         ptr += join.sep.size;
       }
     }
-  memcpy(ptr, join.post.str, join.pre.size);
+  memcpy(ptr, join.post.str, join.post.size);
   ptr += join.post.size;
   *ptr = 0;
   return res;

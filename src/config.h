@@ -7,6 +7,7 @@ typedef struct {
   String8 smtp_port;
   String8 pop3_port;
   String8 username;
+  String8 db_path;
   String8 server_log_path;
   String8 client_log_path;
 } Config;

@@ -2,7 +2,9 @@
 rm *.log
 rm server.log.*
 rm client.log
-gcc -g -I./src src/server.c -o build/server
-gcc -g -I./src src/client.c -o build/client
-gcc -g -I./src src/test.c -o build/test
+
+flags="-g -I./src -lsqlite3"
+gcc $flags src/server.c -o build/server
+gcc $flags src/client.c -o build/client
+gcc $flags src/test.c -o build/test
 gcc -g -I./src src/base/test.c -o build/base/test

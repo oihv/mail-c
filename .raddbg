@@ -11,12 +11,12 @@ target:
 target:
 {
   executable: "build/client"
-  working_directory: "build/"
+  working_directory: build
   arguments: " 0 7777 1110"
   enabled: 0
 }
 target:
 {
   executable: "build/base/test"
-  working_directory: "build/base/"
+  working_directory: "build/base"
 }

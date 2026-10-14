@@ -150,16 +150,12 @@ int main() {
       StrEvalPrint(join.pre);
       StrEvalPrint(join.sep);
       StrEvalPrint(join.post);
-      String8Node node1 = {.string = str8_lit("log system")};
-      String8Node node2 = {.string = str8_lit("pop3")};
-      String8Node node3 = {.string = str8_lit("smtp")};
-      String8Node node4 = {.string = str8_lit("gui")};
-      String8Node node5 = {.string = str8_lit("database")};
-      str8_list_push_node(&list1, &node1);
-      str8_list_push_node(&list1, &node2);
-      str8_list_push_node(&list1, &node3);
-      str8_list_push_node(&list1, &node4);
-      str8_list_push_node(&list1, &node5);
+      str8_list_push(perm_arena, &list1, str8_lit("log system"));
+      str8_list_push(perm_arena, &list1, str8_lit("pop3"));
+      str8_list_push(perm_arena, &list1, str8_lit("smtp"));
+      str8_list_push(perm_arena, &list1, str8_lit("gui"));
+      str8_list_push(perm_arena, &list1, str8_lit("database"));
+      str8_list_push(perm_arena, &list1, str8_lit(".\r\n"));
       for
         EachNode(i, String8Node, list1.first) { StrEvalPrint(i->string); }
       String8 res = str8_list_join(perm_arena, &list1, &join);
