@@ -2,4 +2,6 @@ build/
 *.log
 server.log.*
 *.db
+database.db*
+images/
 

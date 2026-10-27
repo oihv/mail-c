@@ -3,7 +3,7 @@
 
 // math
 fn Rng1U64 r1u64(u64 min, u64 max) {
-  Rng1U64 r = {min, max};
+  Rng1U64 r = {{min, max}};
   if (r.min > r.max) {
     Swap(u64, r.min, r.max);
   }
@@ -204,10 +204,8 @@ fn String8 str8_substr(String8 str, Rng1U64 range) {
 fn String8 str8_concat(Arena* arena, String8 a, String8 b) {
   String8 result = {.size = a.size + b.size};
   result.str = arena_push(arena, result.size * sizeof(u8), 1);
-  for
-    EachIndex(i, a.size) { result.str[i] = a.str[i]; }
-  for
-    EachIndex(i, b.size) { result.str[i + a.size] = b.str[i]; }
+  ForEachIndex(i, a.size) { result.str[i] = a.str[i]; }
+  ForEachIndex(i, b.size) { result.str[i + a.size] = b.str[i]; }
   return result;
 }
 
@@ -234,20 +232,18 @@ fn String8 str8_skip_chop_whitespace(String8 string) {
 fn String8 str8_trim_whitespace(String8 a) {
   u8* start = 0;
   u8* end = 0;
-  for
-    EachIndex(i, a.size) {
-      if (!char_is_space(a.str[i])) {
-        start = a.str + i;
-        break;
-      }
+  ForEachIndex(i, a.size) {
+    if (!char_is_space(a.str[i])) {
+      start = a.str + i;
+      break;
     }
-  for
-    EachIndexRev(i, a.size) {
-      if (!char_is_space(a.str[i])) {
-        end = a.str + i; // one pass last
-        break;
-      }
+  }
+  ForEachIndexRev(i, a.size) {
+    if (!char_is_space(a.str[i])) {
+      end = a.str + i; // one pass last
+      break;
     }
+  }
   String8 result = str8_range(start, end);
   return result;
 }
@@ -255,11 +251,10 @@ fn String8 str8_trim_whitespace(String8 a) {
 fn b32 str8_compare(String8 a, String8 b) {
   if (a.size != b.size)
     return false;
-  for
-    EachIndex(i, a.size) {
-      if (a.str[i] != b.str[i])
-        return false;
-    }
+  ForEachIndex(i, a.size) {
+    if (a.str[i] != b.str[i])
+      return false;
+  }
   return true;
 }
 
@@ -286,7 +281,7 @@ fn u64 str8_find(String8 haystack, String8 needle) {
 fn String8 str8_copy(Arena* arena, String8 s) {
   String8 str;
   str.size = s.size;
-  str.str = arena_push(arena, (str.size + 1)*sizeof(u8), 1);
+  str.str = arena_push(arena, (str.size + 1) * sizeof(u8), 1);
   memcpy(str.str, s.str, s.size);
   str.str[str.size] = 0;
   return str;
@@ -316,22 +311,20 @@ fn String8 str8f(Arena* arena, char* fmt, ...) {
 fn i32 str8_to_i32(String8 str) {
   i32 acc = 0;
   i32 mul = 1;
-  for
-    EachIndexRev(i, str.size) {
-      acc += (str.str[i - 1] - '0') * mul;
-      mul *= 10;
-    }
+  ForEachIndexRev(i, str.size) {
+    acc += (str.str[i - 1] - '0') * mul;
+    mul *= 10;
+  }
   return acc;
 }
 
 fn u64 str8_to_u64(String8 str) {
   u64 acc = 0;
   u64 mul = 1;
-  for
-    EachIndexRev(i, str.size) {
-      acc += (str.str[i - 1] - '0') * mul;
-      mul *= 10;
-    }
+  ForEachIndexRev(i, str.size) {
+    acc += (str.str[i - 1] - '0') * mul;
+    mul *= 10;
+  }
   return acc;
 }
 
@@ -376,15 +369,14 @@ fn String8 str8_list_join(Arena* arena, String8List* list,
   u8* ptr = res.str = (u8*)arena_push(arena, res.size * sizeof(u8), 1);
   memcpy(ptr, join.pre.str, join.pre.size);
   ptr += join.pre.size;
-  for
-    EachNode(node, String8Node, list->first) {
-      memcpy(ptr, node->string.str, node->string.size);
-      ptr += node->string.size;
-      if (node->next != 0) {
-        memcpy(ptr, join.sep.str, join.sep.size);
-        ptr += join.sep.size;
-      }
+  ForEachNode(node, String8Node, list->first) {
+    memcpy(ptr, node->string.str, node->string.size);
+    ptr += node->string.size;
+    if (node->next != 0) {
+      memcpy(ptr, join.sep.str, join.sep.size);
+      ptr += join.sep.size;
     }
+  }
   memcpy(ptr, join.post.str, join.post.size);
   ptr += join.post.size;
   *ptr = 0;
@@ -493,8 +485,13 @@ fn void log_select(Log* log) { log_active = log; }
 fn void log_msg(LogMsgKind kind, String8 string) {
   if (log_active != 0 && log_active->top_scope != 0) {
     String8 string_copy = str8_copy(log_active->arena, string);
-    str8_list_push(log_active->arena, &log_active->top_scope->strings[kind],
-                   string_copy);
+    // str8_list_push(log_active->arena, &log_active->top_scope->strings[kind],
+    // string_copy);
+    LogMsg* msg = arena_push(log_active->arena, sizeof(LogMsg), 1);
+    msg->kind = kind;
+    msg->string = string_copy;
+    SLLQueuePush(log_active->top_scope->first, log_active->top_scope->last,
+                 msg);
   }
 }
 
@@ -522,24 +519,70 @@ fn void log_scope_begin(void) {
   }
 }
 
-fn LogScopeResult log_scope_end(Arena* arena) {
+fn LogScopeResult log_scope_end(Arena* arena, LogMsgKindFlag flag) {
   LogScopeResult result = {0};
   if (log_active != 0) {
     LogScope* scope = log_active->top_scope;
     if (scope != 0) {
-      SLLStackPop(log_active->top_scope);
       if (arena != 0) {
-        for
-          EachEnumVal(LogMsgKind, kind) {
-            Temp scratch = arena_scratch_get(&arena, 1);
-            String8 result_unindented =
-                str8_list_join(scratch.arena, &scope->strings[kind], 0);
-            result.strings[kind] =
-                indented_from_string(arena, result_unindented);
-            arena_scratch_release(scratch);
-          }
+        // ForEachEnumVal(LogMsgKind, kind) {
+        //   Temp scratch = arena_scratch_get(&arena, 1);
+        //   String8 result_unindented =
+        //       str8_list_join(scratch.arena, &scope->strings[kind], 0);
+        //   result.strings[kind] = indented_from_string(arena,
+        //   result_unindented); arena_scratch_release(scratch);
+        // }
+
+        result.string = log_scope_peek(arena, flag);
       }
+      SLLStackPop(log_active->top_scope);
       arena_pop_to(log_active->arena, scope->pos);
+    }
+  }
+  return result;
+}
+
+const String8 _level_prefixes[] = {
+    [LogMsgKind_Info] = str8_const_lit("[INFO] "),
+    [LogMsgKind_Warn] = str8_const_lit("[WARN] "),
+    [LogMsgKind_UserError] = str8_const_lit("[ERROR] "),
+    str8_const_lit("Unknown Log: "),
+};
+
+fn String8 log_scope_peek(Arena* arena, LogMsgKindFlag flag) {
+  String8 result = {0};
+  if (log_active != 0) {
+    LogScope* scope = log_active->top_scope;
+    if (scope != 0) {
+      Temp scratch = arena_scratch_get(&arena, 1);
+      String8List result_list = {0};
+      ForEachNode(msg, LogMsg, scope->first) {
+        if (msg->kind & flag) {
+          String8 prefix = _level_prefixes[msg->kind];
+          String8 msg_prefixed =
+              str8_concat(scratch.arena, prefix, msg->string);
+          str8_list_push(scratch.arena, &result_list, msg_prefixed);
+        }
+        result = str8_list_join(arena, &result_list,
+                                &(StringJoin){.sep = str8_lit("\n")});
+      }
+      // result = scope->strings[kind];
+    }
+  }
+  return result;
+}
+
+fn u64 log_scope_peek_count(LogMsgKindFlag flag) {
+  u64 result = 0;
+
+  if (log_active != 0) {
+    LogScope* scope = log_active->top_scope;
+    if (scope != 0) {
+      ForEachNode(msg, LogMsg, scope->first) {
+        if (flag & msg->kind) {
+          result += 1;
+        }
+      }
     }
   }
   return result;
@@ -551,7 +594,7 @@ fn b32 write_data_to_file_path(String8 path, String8 data) {
   b32 good = 0;
   int file = open((char*)path.str, O_WRONLY, 0755);
   if (file != 0) {
-    u64 bytes_written = pwrite(file, (char*) data.str, data.size, 0);
+    u64 bytes_written = pwrite(file, (char*)data.str, data.size, 0);
     good = (bytes_written == data.size);
     close(file);
   }
@@ -562,10 +605,10 @@ fn b32 write_data_to_file_path(String8 path, String8 data) {
 fn b32 append_data_to_file_path(String8 path, String8 data) {
   b32 good = 0;
   if (data.size != 0) {
-    int file = open((char*)path.str, O_WRONLY|O_APPEND|O_CREAT, 0755);
+    int file = open((char*)path.str, O_WRONLY | O_APPEND | O_CREAT, 0755);
     if (file != 0) {
       struct stat fd_stat = {0};
-      int fstat_result = stat((char*)data.str, &fd_stat);
+      stat((char*)data.str, &fd_stat);
       u64 pos = fd_stat.st_size;
       u64 bytes_written = pwrite(file, (char*)data.str, pos + data.size, pos);
       good = (bytes_written == data.size);

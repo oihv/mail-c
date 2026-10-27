@@ -19,12 +19,40 @@ typedef enum { SMTP, POP3 } Protocol;
 String8 protocol_strings[] = {{.str = (u8*)"SMTP", .size = 4},
                               {.str = (u8*)"POP3", .size = 4}};
 
+typedef enum Net_Status {
+  Net_Status_Ok = 1,
+  Net_Status_Eof, // orderly close, not an error, connection closed
+  Net_Status_Interrupted,
+  Net_Status_WouldBlock,
+  Net_Status_ResolveFailed, // getaddrinfo / EAI_*
+  Net_Status_SocketFailed,
+  Net_Status_ConnectFailed,
+  Net_Status_BindFailed,
+  Net_Status_ListenFailed,
+  Net_Status_SendFailed,
+  Net_Status_RecvFailed,
+  Net_Status_ProtocolError, // malformed/oversized input
+  Net_Status_OutOfMemory,
+} Net_Status;
+
+typedef struct Net_Result {
+  Net_Status status;
+  u64 bytes;     // transferred / consumed by this operation
+  i32 sys_error; // errno or EAI_* captured immediately
+} Net_Result;
+
+typedef struct Net_Socket {
+  Net_Status status;
+  i32 fd;
+} Net_Socket;
+
+Net_Socket net_connect(String8 addr, String8 port);
+Net_Socket net_listen(String8 addr, String8 port);
+
 void* get_in_addr(struct sockaddr* sa);
-b32 recv_all(int fd, String8* buf);
-b32 recv_until_crlf(int fd, String8* buf);
-b32 recv_until_dot_crlf(int fd, String8* buf);
-b32 send_all(int fd, String8 data);
-int connect_socket_get(String8 addr, String8 port);
-int listen_socket_get(String8 addr, String8 port);
+Net_Result net_recv(int fd, u8* buf, u64 cap);
+Net_Result recv_until_crlf(int fd, String8* buf);
+Net_Result recv_until_dot_crlf(int fd, String8* buf);
+Net_Result send_all(int fd, String8 data);
 
 #endif

@@ -23,14 +23,12 @@ typedef i32 b32;
 #define MB(n) (u64)(n << 20)
 #define GB(n) (u64)(n << 30)
 
-#define EachIndex(it, count) (u64 it = 0; it < (count); it += 1) // 0..n-1
-#define EachIndexRev(it, count)                                                \
-  (u64 it = (count); it > 0;                                                   \
-   it -=                                                                       \
-   1) // n..1 (not n-1..0 because otherwise unsigned number cant use this)
-#define EachNode(it, T, first) (T* it = first; it != 0; it = it->next)
-#define EachEnumVal(type, it)                                                  \
-  (type it = (type)0; it < type##_COUNT; it = (type)(it + 1))
+#define ForEachIndex(it, count) for (u64 it = 0; it < (count); it += 1) // 0..n-1
+#define ForEachIndexRev(it, count)                                                \
+  for (u64 it = (count); it > 0; it -= 1) // n..1 (not n-1..0 because otherwise unsigned number cant use this)
+#define ForEachNode(it, T, first) for (T* it = first; it != 0; it = it->next)
+#define ForEachEnumVal(type, it)                                                  \
+  for (type it = (type)0; it < type##_COUNT; it = (type)(it + 1))
 
 #include <stdio.h>
 #define EvalPrint(x) printf("%s = %d\n", #x, (int)(x))
@@ -145,6 +143,14 @@ typedef struct {
 } String8; // because each char is 8 bit
 
 // string functions
+// constructors
+#define s(S) str8_lit(S)
+#define str8_lit(s)                                                            \
+  str8((u8*)(s), sizeof(s) - 1) // -1 because we don't need the null terminator
+#define str8_const_lit(s)                                                            \
+{(u8*)(s), sizeof(s) - 1}
+#define str8_fmt(s) (int)((s).size), (s).str
+#define StrEvalPrint(s) printf("%s = %.*s\n", #s, str8_fmt(s));
 fn String8 str8(u8* str, u64 size);
 fn String8 str8_cstring(char* str);
 fn b32 char_is_space(u8 c); // copy from rjf
@@ -200,11 +206,6 @@ fn String8 str8_list_join(Arena* arena, String8List* list,
                           StringJoin* optional_params);
 fn String8List str8_split(Arena* arena, String8 target, String8 delim);
 
-#define str8_lit(s)                                                            \
-  str8((u8*)(s), sizeof(s) - 1) // -1 because we don't need the null terminator
-#define str8_fmt(s) (int)((s).size), (s).str
-#define StrEvalPrint(s) printf("%s = %.*s\n", #s, str8_fmt(s));
-
 ////////////////////////////////
 //~ rjf: Basic Text Indentation
 
@@ -216,21 +217,35 @@ fn String8 indented_from_string(Arena* arena, String8 string);
 //~ rjf: Log Types
 
 typedef enum LogMsgKind {
-  LogMsgKind_Info,
-  LogMsgKind_UserError,
+  LogMsgKind_Info = 1 << 1,
+  LogMsgKind_Warn = 1 << 2,
+  LogMsgKind_UserError = 1 << 3,
   LogMsgKind_COUNT
 } LogMsgKind;
+
+typedef u8 LogMsgKindFlag;
+#define LogMsgKind_All 0b11111111
+
+typedef struct LogMsg LogMsg;
+struct LogMsg {
+  LogMsg* next;
+  String8 string;
+  LogMsgKind kind;
+};
 
 typedef struct LogScope LogScope;
 struct LogScope {
   LogScope* next;
   u64 pos;
-  String8List strings[LogMsgKind_COUNT];
+  // String8List strings[LogMsgKind_COUNT];
+  LogMsg* first;
+  LogMsg* last;
 };
 
 typedef struct LogScopeResult LogScopeResult;
 struct LogScopeResult {
-  String8 strings[LogMsgKind_COUNT];
+  // String8 strings[LogMsgKind_COUNT];
+  String8 string;
 };
 
 typedef struct Log Log;
@@ -261,6 +276,8 @@ fn void log_msgf(LogMsgKind kind, char* fmt, ...);
 #define log_infof(...) log_msgf(LogMsgKind_Info, __VA_ARGS__)
 #define log_user_error(s) log_msg(LogMsgKind_UserError, (s))
 #define log_user_errorf(...) log_msgf(LogMsgKind_UserError, __VA_ARGS__)
+#define log_warn(s) log_msg(LogMsgKind_Warn, (s))
+#define log_warnf(...) log_msgf(LogMsgKind_Warn, __VA_ARGS__)
 
 #define LogInfoNamedBlock(s)                                                   \
   DeferLoop(log_infof("%S:\n{\n", (s)), log_infof("}\n"))
@@ -271,7 +288,9 @@ fn void log_msgf(LogMsgKind kind, char* fmt, ...);
 //~ rjf: Log Scopes
 
 fn void log_scope_begin(void);
-fn LogScopeResult log_scope_end(Arena* arena);
+fn LogScopeResult log_scope_end(Arena* arena, LogMsgKindFlag flag);
+fn String8 log_scope_peek(Arena* arena, LogMsgKindFlag flag);
+fn u64 log_scope_peek_count(LogMsgKindFlag flag);
 
 // filesystem (linux only)
 #include <stdio.h>

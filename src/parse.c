@@ -1,5 +1,3 @@
-#include "base/base.h"
-
 // syntax: <mail@domain.xyz>
 String8 parse_mail_address(String8 s) {
   String8 email_raw = str8_skip_chop_whitespace(s);
@@ -25,4 +23,5 @@ String8 parse_mail_address(String8 s) {
   }
 
   String8 sender = str8_substr(email_raw, r1u64(0, email_end));
+  return sender;
 }

@@ -1,10 +1,8 @@
 #ifndef THREADPOOL_H
 #define THREADPOOL_H
 
-#include <sqlite3.h>
-
 #define TASK_PAYLOAD_SIZE KB(4)
-#include "config.h"
+#include <pthread.h>
 
 typedef struct Task {
     void (*function)(void *arg);

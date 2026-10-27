@@ -1,2 +1,15 @@
+-Wall
+-Werror
+-Wno-unused-includes
 -I./src
 -include ./base/base.h
+-include time.h
+-include ./cli.h
+-include ./config.h
+-include ./db.h
+-include ./imf.h
+-include ./network.h
+-include ./pop3.h
+-include ./parse.h
+-include ./smtp.h
+-include ./threadpool.h

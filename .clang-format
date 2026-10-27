@@ -1,3 +1,10 @@
 SortIncludes: Never
 PointerAlignment: Left
 DerivePointerAlignment: false
+# EachNode macro is expanded into two lines
+# Declare your macro name so clang-format treats it as a foreach loop
+ForEachMacros: ['EachNode']
+
+# Allow short loops to remain on a single line
+AllowShortLoopsOnASingleLine: true
+AllowShortBlocksOnASingleLine: true   # Key: controls whether braces blocks are merged into a single line

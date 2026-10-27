@@ -1,8 +1,3 @@
-#include <pthread.h>
-#include "threadpool.h"
-#include "base/base.h"
-#include "db.h"
-
 __thread Worker* current_worker = NULL;
 __thread u32 log_thread_id = 0;
 
@@ -33,8 +28,8 @@ static void* thread_worker(void* arg) {
     pool->count--;
     log_scope_begin();
     log_infof("[t%u] [info] got task\n", log_thread_id);
-    LogScopeResult log = log_scope_end(scratch.arena);
-    append_data_to_file_path(current_worker->log_path, log.strings[LogMsgKind_Info]);
+    LogScopeResult log = log_scope_end(scratch.arena, LogMsgKind_All);
+    append_data_to_file_path(current_worker->log_path, log.string);
     arena_scratch_release(scratch);
 
     pthread_mutex_unlock(&pool->lock);
