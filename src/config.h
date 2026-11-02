@@ -7,7 +7,8 @@
     X(smtp_port)         \
     X(pop3_port)         \
     X(db_path)           \
-    X(log_path)
+    X(log_path)          \
+    X(mail_domain)
 
 typedef struct {
 #define X(name) String8 name;

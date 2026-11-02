@@ -3,6 +3,7 @@
 */
 
 #include "base/base.h"
+#include "base64.h"
 #include "config.h"
 #include "db.h"
 #include "network.h"
@@ -10,13 +11,14 @@
 #include "pop3.h"
 #include "imf.h"
 #include "cli.h"
+#include "threadpool.h"
 
 #include "base/base.c"
+#include "base64.c"
 #include "config.c"
 #include "db.c"
 #include "network.c"
 #include "parse.c"
-__thread u32 log_thread_id = 0; // since some logs requires thread id
 #include "smtp.c"
 #include "pop3.c"
 #include "imf.c"
@@ -42,11 +44,20 @@ int main(int argc, char* argv[]) {
   }
   ctx.pop3_fd = conn_result.fd;
 
+  // connect tls
+  Net_SSL ssl_result = tls_connect(ctx.pop3_fd);
+  if (ssl_result.ok == false) {
+    goto cleanup;
+  }
+  ctx.pop3_ssl = ssl_result.ssl;
+
+  // recv buffer
   String8 recv_buf = {.str = arena_push(perm_arena, RECV_CAP + 1, true),
                       .size = 0};
   ctx.recv_buf = recv_buf;
 
-  recv_until_crlf(ctx.pop3_fd, &ctx.recv_buf);
+  // check for server ready message
+  recv_until_crlf_tls(ctx.pop3_ssl, &ctx.recv_buf);
   if (log_scope_peek_count(LogMsgKind_UserError) > 0)
     goto cleanup;
 
@@ -85,6 +96,7 @@ int main(int argc, char* argv[]) {
   }
 
   close(ctx.pop3_fd);
+  tls_cleanup();
 
 cleanup:;
   LogScopeResult log = log_scope_end(perm_arena, LogMsgKind_All);

@@ -4,6 +4,7 @@
 typedef enum {
   RC_SERVICE_READY = 220,
   RC_CLOSING_TRANSMISSION_CHANNEL = 221,
+  RC_AUTH_SUCCESS = 235,
   RC_OK = 250,
   RC_START_MAIL_INPUT = 354,
   RC_SERVICE_NOT_AVAIL = 421,
@@ -51,6 +52,7 @@ fn String8 smtp_command_from(Arena* arena, String8 from);
 fn String8 smtp_command_to(Arena* arena, String8 to);
 fn String8 smtp_command_data(Arena* arena);
 fn String8 smtp_command_quit(Arena* arena);
+fn String8 smtp_command_auth_plain(Arena* arena, String8 full_username, String8 password);
 fn String8 smtp_process_line(Arena* arena, Session* state, String8 line);
 
 #endif 

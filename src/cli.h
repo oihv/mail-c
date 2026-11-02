@@ -14,8 +14,10 @@ typedef struct {
   CLI_State current_state;
   Config conf;
   int pop3_fd;
+  SSL* pop3_ssl;
   String8 recv_buf;
   String8 username;
+  String8 password;
 } CLI;
 
 // Large enough for the biggest single input line (the recipient list, which is

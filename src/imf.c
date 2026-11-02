@@ -13,16 +13,19 @@ fn String8 imf_local_date(Arena* arena) {
   return res_owned;
 }
 
-fn String8 imf_message_compose(Arena* arena, String8 date, String8 from,
-                               String8 data) {
+fn String8 imf_message_compose(Arena* arena, String8 date, String8 sender,
+                               String8 recipients, String8 data) {
   Temp scratch = arena_scratch_get(&arena, 1);
   String8List list = {0};
   String8 date_head =
       str8f(scratch.arena, "Date: %.*s%.*s", str8_fmt(date), str8_fmt(CRLF));
   str8_list_push(scratch.arena, &list, date_head);
   String8 from_head =
-      str8f(scratch.arena, "From: %.*s%.*s", str8_fmt(from), str8_fmt(CRLF));
+      str8f(scratch.arena, "From: %.*s%.*s", str8_fmt(sender), str8_fmt(CRLF));
   str8_list_push(scratch.arena, &list, from_head);
+  String8 to_head =
+      str8f(scratch.arena, "To: %.*s%.*s", str8_fmt(recipients), str8_fmt(CRLF));
+  str8_list_push(scratch.arena, &list, to_head);
   str8_list_push(scratch.arena, &list, CRLF); // blank crlf
   str8_list_push(
       scratch.arena, &list,

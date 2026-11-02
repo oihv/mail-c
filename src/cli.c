@@ -26,10 +26,10 @@ fn void cli_login(Arena* arena, CLI* ctx) {
 
     log_scope_begin();
     b32 res =
-        pop3_send_and_response_ok(ctx->pop3_fd,
-                                  str8f(scratch2.arena, "USER %.*s%.*s",
-                                        str8_fmt(username), str8_fmt(CRLF)),
-                                  &ctx->recv_buf);
+        pop3_send_and_response_ok_tls(ctx->pop3_ssl,
+                                      str8f(scratch2.arena, "USER %.*s%.*s",
+                                            str8_fmt(username), str8_fmt(CRLF)),
+                                      &ctx->recv_buf);
     String8 error = log_scope_peek(scratch2.arena, LogMsgKind_UserError);
     if (error.size > 0) {
       append_data_to_file_path(ctx->conf.log_path, error);
@@ -54,10 +54,10 @@ fn void cli_login(Arena* arena, CLI* ctx) {
 
     log_scope_begin();
     b32 res =
-        pop3_send_and_response_ok(ctx->pop3_fd,
-                                  str8f(scratch2.arena, "PASS %.*s%.*s",
-                                        str8_fmt(password), str8_fmt(CRLF)),
-                                  &ctx->recv_buf);
+        pop3_send_and_response_ok_tls(ctx->pop3_ssl,
+                                      str8f(scratch2.arena, "PASS %.*s%.*s",
+                                            str8_fmt(password), str8_fmt(CRLF)),
+                                      &ctx->recv_buf);
     String8 error = log_scope_peek(scratch2.arena, LogMsgKind_UserError);
     if (error.size > 0) {
       append_data_to_file_path(ctx->conf.log_path, error);
@@ -76,7 +76,9 @@ fn void cli_login(Arena* arena, CLI* ctx) {
   }
   printf("Login successful\n");
 
-  ctx->username = str8_copy(arena, username);
+  ctx->username = str8f(arena, "%.*s@%.*s", str8_fmt(username),
+                        str8_fmt(ctx->conf.mail_domain));
+  ctx->password = str8_copy(arena, password);
   ctx->current_state = CLI_State_Menu;
 
   arena_scratch_release(scratch);
@@ -112,19 +114,20 @@ fn void cli_menu(CLI* ctx) {
 
 void cli_inbox(CLI* ctx) {
   Temp scratch = arena_scratch_get(0, 0);
-  if (send_all(ctx->pop3_fd, str8f(scratch.arena, "LIST%.*s", str8_fmt(CRLF)))
+  if (send_all_tls(ctx->pop3_ssl,
+                   str8f(scratch.arena, "LIST%.*s", str8_fmt(CRLF)))
           .status != Net_Status_Ok) {
     printf("Error when trying to send LIST request\n");
     goto cleanup;
   }
 
-  if (recv_until_dot_crlf(ctx->pop3_fd, &ctx->recv_buf).status !=
+  if (recv_until_dot_crlf_tls(ctx->pop3_ssl, &ctx->recv_buf).status !=
       Net_Status_Ok) {
     printf("Error when trying to receive LIST response\n");
     goto cleanup;
   }
 
-  if (!pop3_is_response_ok(ctx->recv_buf)) {
+  if (pop3_is_response_ok(ctx->recv_buf).ok == false) {
     printf("Server response error\n");
     goto cleanup;
   }
@@ -144,15 +147,19 @@ void cli_inbox(CLI* ctx) {
       String8List chunks = str8_split(scratch.arena, first_line, str8_lit(" "));
       total_mail = str8_to_u64(chunks.first->next->string);
 
-      String8 octets = chunks.first->next->next->next->string;
-      if (octets.str[0] == '(') {
-        octets.str++;
-        octets.size -= 1;
-      } else {
-        printf("Unexpected reply token\n");
-        goto cleanup;
+      String8Node* octet_node = chunks.first->next->next->next;
+      String8 octets = {0};
+      if (octet_node) {
+        octets = octet_node->string;
+        if (octets.str[0] == '(') {
+          octets.str++;
+          octets.size -= 1;
+        } else {
+          printf("Unexpected reply token\n");
+          goto cleanup;
+        }
+        total_octet = str8_to_u64(octets);
       }
-      total_octet = str8_to_u64(octets);
     }
 
     lines.first = lines.first->next; // advance by 1
@@ -205,20 +212,20 @@ void cli_inbox(CLI* ctx) {
   }
 
   // request to server RETR
-  if (send_all(ctx->pop3_fd,
-               str8f(scratch.arena, "RETR %lu%.*s", choice, str8_fmt(CRLF)))
+  if (send_all_tls(ctx->pop3_ssl,
+                   str8f(scratch.arena, "RETR %lu%.*s", choice, str8_fmt(CRLF)))
           .status != Net_Status_Ok) {
     printf("Error when trying to send RETR request\n");
     goto cleanup;
   }
 
-  if (recv_until_dot_crlf(ctx->pop3_fd, &ctx->recv_buf).status !=
+  if (recv_until_dot_crlf_tls(ctx->pop3_ssl, &ctx->recv_buf).status !=
       Net_Status_Ok) {
     printf("Error when trying to receive RETR response\n");
     goto cleanup;
   }
 
-  if (!pop3_is_response_ok(ctx->recv_buf)) {
+  if (pop3_is_response_ok(ctx->recv_buf).ok == false) {
     printf("Server response error\n");
     goto cleanup;
   }
@@ -228,6 +235,11 @@ void cli_inbox(CLI* ctx) {
   pos += CRLF.size;
   ctx->recv_buf.str += pos;
   ctx->recv_buf.size -= pos;
+
+  // omit the <crlf>.<crlf>
+  ctx->recv_buf.size -= 3;
+
+  // print the message
   printf("%.*s", str8_fmt(ctx->recv_buf));
 
   printf("[enter to continue.]");
@@ -243,11 +255,11 @@ cleanup:
 void cli_compose(CLI* ctx) {
   Temp scratch = arena_scratch_get(0, 0);
 
-  printf("Recipient To: (separate with \";\" for multiple recipients)\n");
+  printf("Recipient To: (separate with ',' for multiple recipients)\n");
   String8 recipients = cli_read_line(scratch.arena);
 
   String8List recipient_list =
-      str8_split(scratch.arena, recipients, str8_lit(";"));
+      str8_split(scratch.arena, recipients, str8_lit(","));
 
   String8 data_line = {
       .str = arena_push(scratch.arena, sizeof(u8) * MAX_DATA_LINE, 1),
@@ -272,12 +284,11 @@ void cli_compose(CLI* ctx) {
 
   String8 data =
       imf_message_compose(scratch.arena, imf_local_date(scratch.arena),
-                          ctx->username, data_joined);
+                          ctx->username, recipients, data_joined);
 
   log_scope_begin();
 
   Net_Result result = {0};
-  i32 smtp_fd = 0;
 
   Net_Socket conn_result = net_connect(ctx->conf.addr, ctx->conf.smtp_port);
   if (conn_result.status != Net_Status_Ok) {
@@ -285,9 +296,14 @@ void cli_compose(CLI* ctx) {
     goto cleanup;
   }
 
-  smtp_fd = conn_result.fd;
+  Net_SSL ssl_result = tls_connect(conn_result.fd);
+  if (ssl_result.ok == false) {
+    printf("Error when initiating TLS handshake to SMTP port\n");
+    goto cleanup;
+  }
+  SSL* smtp_ssl = ssl_result.ssl;
 
-  result = recv_until_crlf(smtp_fd, &ctx->recv_buf);
+  result = recv_until_crlf_tls(smtp_ssl, &ctx->recv_buf);
   if (result.status != Net_Status_Ok) {
     printf("Error when trying to recv SMTP response\n");
     goto cleanup;
@@ -301,6 +317,9 @@ void cli_compose(CLI* ctx) {
   String8List message_list = {0};
   str8_list_push(scratch.arena, &message_list,
                  smtp_command_ehlo(scratch.arena, ctx->conf.addr));
+  str8_list_push(
+      scratch.arena, &message_list,
+      smtp_command_auth_plain(scratch.arena, ctx->username, ctx->password));
   str8_list_push(scratch.arena, &message_list,
                  smtp_command_from(scratch.arena, ctx->username));
   ForEachNode(recipient, String8Node, recipient_list.first) {
@@ -316,7 +335,7 @@ void cli_compose(CLI* ctx) {
   b32 message_sent = 1;
   b32 is_sending_data = 0;
   ForEachNode(message, String8Node, message_list.first) {
-    if (send_all(smtp_fd, message->string).status != Net_Status_Ok) {
+    if (send_all_tls(smtp_ssl, message->string).status != Net_Status_Ok) {
       printf("Error when trying to send %.*s\n", str8_fmt(message->string));
       message_sent = 0;
       break;
@@ -330,7 +349,7 @@ void cli_compose(CLI* ctx) {
       }
     }
 
-    if (recv_until_crlf(smtp_fd, &ctx->recv_buf).status != Net_Status_Ok) {
+    if (recv_until_crlf_tls(smtp_ssl, &ctx->recv_buf).status != Net_Status_Ok) {
       printf("recv failed\n");
       message_sent = 0;
       break;
@@ -340,6 +359,10 @@ void cli_compose(CLI* ctx) {
     if (str8_compare_cstring(str8_substr(message->string, r1u64(0, 4)),
                              "DATA")) {
       ok_code = RC_START_MAIL_INPUT;
+      is_sending_data = 1;
+    } else if (str8_compare_cstring(str8_substr(message->string, r1u64(0, 10)),
+                                    "AUTH PLAIN")) {
+      ok_code = RC_AUTH_SUCCESS;
       is_sending_data = 1;
     }
 

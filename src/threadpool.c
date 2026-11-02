@@ -1,6 +1,3 @@
-__thread Worker* current_worker = NULL;
-__thread u32 log_thread_id = 0;
-
 static void* thread_worker(void* arg) {
   Worker* w = (Worker*)arg;
   current_worker = w;

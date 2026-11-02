@@ -30,7 +30,7 @@ typedef struct Worker {
   sqlite3* db;
 } Worker;
 
-extern __thread Worker *current_worker;
-extern __thread u32 log_thread_id;
+__thread Worker* current_worker = NULL;
+__thread u32 log_thread_id = 0;
 
 #endif

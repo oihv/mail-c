@@ -97,8 +97,7 @@ fn String8 smtp_command_from(Arena* arena, String8 from) {
 fn String8 smtp_command_to(Arena* arena, String8 to) {
   String8 res =
       str8f(arena, "RCPT TO: <%.*s>%.*s", str8_fmt(to), str8_fmt(CRLF));
-  String8 res_crlf = str8_concat(arena, res, CRLF);
-  return res_crlf;
+  return res;
 }
 
 fn String8 smtp_command_data(Arena* arena) {
@@ -108,6 +107,15 @@ fn String8 smtp_command_data(Arena* arena) {
 
 fn String8 smtp_command_quit(Arena* arena) {
   String8 res = str8f(arena, "QUIT%.*s", str8_fmt(CRLF));
+  return res;
+}
+
+fn String8 smtp_command_auth_plain(Arena* arena, String8 full_username, String8 password) {
+  Temp scratch = arena_scratch_get(&arena, 1);
+  String8 credential = str8f(scratch.arena, "%c%.*s%c%.*s", '\0', str8_fmt(full_username), '\0', str8_fmt(password)); // use %c otherwise sprintf read \0 as terminator
+  String8 credential_encoded = base64_encode(scratch.arena, credential);
+  String8 res = str8f(arena, "AUTH PLAIN %.*s%.*s", str8_fmt(credential_encoded), str8_fmt(CRLF));
+  arena_scratch_release(scratch);
   return res;
 }
 

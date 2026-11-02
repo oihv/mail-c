@@ -1,4 +1,5 @@
 #include "base/base.h"
+#include "base64.h"
 #include "config.h"
 #include "db.h"
 #include "network.h"
@@ -6,13 +7,14 @@
 #include "pop3.h"
 #include "imf.h"
 #include "cli.h"
+#include "threadpool.h"
 
 #include "base/base.c"
+#include "base64.c"
 #include "config.c"
 #include "db.c"
 #include "network.c"
 #include "parse.c"
-__thread u32 log_thread_id = 0; // since some logs requires thread id
 #include "smtp.c"
 #include "pop3.c"
 #include "imf.c"
@@ -80,8 +82,9 @@ int main() {
     {
       String8 data = str8_lit("This is just a message\r\n");
       String8 from = str8_lit("okay@then.com");
+      String8 to = str8_lit("ben@bit.com");
       String8 imf_res = imf_message_compose(
-          scratch.arena, imf_local_date(scratch.arena), from, data);
+          scratch.arena, imf_local_date(scratch.arena), from, to, data);
       StrEvalPrint(imf_res);
     }
   }

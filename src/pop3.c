@@ -1,25 +1,48 @@
-fn b32 pop3_is_response_ok(String8 rep) {
+fn POP3_Result pop3_is_response_ok(String8 rep) {
+  POP3_Result out = {0};
+  out.ok = true;
   if (str8_compare_cstring(str8_substr(rep, r1u64(0, 3)), "+OK")) {
     log_infof("server responsed with OK%\n");
-    return 1;
+    out.reply = POP3_Ok;
   } else if (str8_compare_cstring(str8_substr(rep, r1u64(0, 4)), "-ERR")) {
     log_infof("server responsed with ERR\n");
-    return 0;
+    out.reply = POP3_Err;
   } else {
     log_user_errorf("unrecognized POP3 server response\n");
-    return -1;
+    out.ok = false;
   }
 }
 
-fn b32 pop3_send_and_response_ok(int fd, String8 cmd, String8* buf) {
+fn POP3_Result pop3_send_and_response_ok(int fd, String8 cmd, String8* buf) {
+  POP3_Result out = {0};
+  out.ok = true;
   if (send_all(fd, cmd).status != Net_Status_Ok) {
     log_user_error(
         str8_lit("POP3 command hasn't been completely sent\n"));
-    return 0;
+    out.ok = false;
+    return out;
   }
   if (recv_until_crlf(fd, buf).status != Net_Status_Ok) {
     log_user_error(str8_lit("when receiving POP3 response\n"));
-    return 0;
+    out.ok = false;
+    return out;
+  }
+  return pop3_is_response_ok(*buf);
+}
+
+fn POP3_Result pop3_send_and_response_ok_tls(SSL* ssl, String8 cmd, String8* buf) {
+  POP3_Result out = {0};
+  out.ok = true;
+  if (send_all_tls(ssl, cmd).status != Net_Status_Ok) {
+    log_user_error(
+        str8_lit("POP3 command hasn't been completely sent\n"));
+    out.ok = false;
+    return out;
+  }
+  if (recv_until_crlf_tls(ssl, buf).status != Net_Status_Ok) {
+    log_user_error(str8_lit("when receiving POP3 response\n"));
+    out.ok = false;
+    return out;
   }
   return pop3_is_response_ok(*buf);
 }

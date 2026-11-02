@@ -2,6 +2,8 @@
 #define NETWORK_H
 
 // networking helper functions
+
+// network includes
 #include <netinet/in.h>
 #include <errno.h>
 #include <sys/socket.h>
@@ -9,6 +11,13 @@
 #include <netdb.h>
 #include <arpa/inet.h>
 #include <unistd.h>
+
+// SSL includes
+#pragma push_macro("fn") // temporarily undefine
+#undef fn
+#include <openssl/ssl.h>
+#pragma pop_macro("fn")
+#include <openssl/err.h>
 
 #define RECV_CAP KB(64)
 
@@ -46,13 +55,35 @@ typedef struct Net_Socket {
   i32 fd;
 } Net_Socket;
 
-Net_Socket net_connect(String8 addr, String8 port);
-Net_Socket net_listen(String8 addr, String8 port);
+typedef struct SSL_Result {
+  SSL* ssl;
+  b32 ok;
+} Net_SSL;
 
-void* get_in_addr(struct sockaddr* sa);
-Net_Result net_recv(int fd, u8* buf, u64 cap);
-Net_Result recv_until_crlf(int fd, String8* buf);
-Net_Result recv_until_dot_crlf(int fd, String8* buf);
-Net_Result send_all(int fd, String8 data);
+#define SSL_ERR_LEN 256
+
+// TLS
+SSL_CTX *ssl_ctx = NULL;   // global, created once
+fn void tls_init(void);
+fn void tls_cleanup(void);
+fn Net_SSL tls_connect(int fd);
+
+// helper
+fn void* get_in_addr(struct sockaddr* sa);
+
+// socket
+fn Net_Socket net_connect(String8 addr, String8 port);
+fn Net_Socket net_listen(String8 addr, String8 port);
+
+// operation
+fn Net_Result net_recv(int fd, u8* buf, u64 cap);
+fn Net_Result net_recv_tls(SSL* ssl, u8* buf, u64 cap);
+fn Net_Result recv_until_crlf(int fd, String8* buf);
+fn Net_Result recv_until_crlf_tls(SSL* ssl, String8* buf);
+fn Net_Result recv_until_dot_crlf(int fd, String8* buf);
+fn Net_Result recv_until_dot_crlf_tls(SSL* ssl, String8* buf);
+fn Net_Result send_all(int fd, String8 data);
+fn Net_Result send_all_tls(SSL* ssl, String8 data);
+
 
 #endif
